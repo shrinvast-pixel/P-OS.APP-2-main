@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Sun, CircleCheck as CheckCircle2, Clock, ClipboardList, Layers, Brush, CircleUser as UserCircle2, TrendingUp, Calendar, CalendarClock, Users, TriangleAlert as AlertTriangle, FileText, ClipboardCheck, ChevronDown, Check, Target, Plus, Ruler, LogIn, LogOut, MapPin, Timer, Coffee, X, Camera, ImageOff, Hourglass, AlarmClock, ZoomIn, ZoomOut, Eye } from 'lucide-react';
+import { Sun, CircleCheck as CheckCircle2, Clock, ClipboardList, Layers, Brush, CircleUser as UserCircle2, TrendingUp, Calendar, CalendarClock, Users, TriangleAlert as AlertTriangle, FileText, ClipboardCheck, ChevronDown, Check, Target, Plus, Ruler, LogIn, LogOut, MapPin, Timer, Coffee, X, Camera, ImageOff, Hourglass, AlarmClock, ZoomIn, ZoomOut, Eye, Package, Zap, Send, AlertCircle } from 'lucide-react';
 import type {
   PaintProject,
   Supervisor,
@@ -9,6 +9,7 @@ import type {
   Painter,
   ClockState,
   SupervisorSessionState,
+  MaterialItem,
 } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { DailyLogModal, type DailyLogForm } from './DailyLogModal';
@@ -65,6 +66,13 @@ function stepIconClass(name: string | undefined): string {
     if (key.includes(k)) return STEP_ICONS[k];
   }
   return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
+}
+
+/** Returns the display unit for material consumption — "kg" for powder/putty/cement, "L" otherwise. */
+function consumptionUnit(stepName?: string): string {
+  const n = (stepName || '').toLowerCase();
+  if (n.includes('putty') || n.includes('powder') || n.includes('cement') || n.includes('white_cement')) return 'kg';
+  return 'L';
 }
 
 function getInitials(name?: string | null): string {
@@ -169,7 +177,7 @@ export function SupervisorPortal({
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [showDailyLog, setShowDailyLog] = useState(false);
   const [showTargetAllocator, setShowTargetAllocator] = useState(false);
-  const [activeTab, setActiveTab] = useState<'rooms' | 'weekly' | 'agenda' | 'logs'>('rooms');
+  const [activeTab, setActiveTab] = useState<'rooms' | 'weekly' | 'agenda' | 'logs' | 'materials'>('rooms');
   const [logFilterDate, setLogFilterDate] = useState<string>('');
   const [photoUploadTarget, setPhotoUploadTarget] = useState<{ floorId: string; roomId: string; step: FinishingStep } | null>(null);
   const [qaTarget, setQaTarget] = useState<{ floorId: string; roomId: string; step: FinishingStep; roomName: string } | null>(null);
@@ -806,6 +814,14 @@ export function SupervisorPortal({
           >
             Daily Logs
           </button>
+          <button
+            onClick={() => setActiveTab('materials')}
+            className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all ${
+              activeTab === 'materials' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400'
+            }`}
+          >
+            Site Materials
+          </button>
         </div>
 
         <div className="grid lg:grid-cols-4 min-h-[500px]">
@@ -915,7 +931,7 @@ export function SupervisorPortal({
                                             <StatusBadge status={step.status} size="sm" />
                                             {step.status === 'COMPLETED' && (
                                               <div className="text-[9px] font-bold text-emerald-400">
-                                                 {step.areaCompleted || step.completedSqft || step.stepSqft || room.exteriorSqft || room.interiorSqft || 0} sqft · {step.consumedQuantity || 0} L
+                                                 {step.areaCompleted || step.completedSqft || step.stepSqft || room.exteriorSqft || room.interiorSqft || 0} sqft · {step.consumedQuantity || 0} {consumptionUnit(step.name)}
                                               </div>
                                             )}
                                           </div>
@@ -1200,6 +1216,10 @@ export function SupervisorPortal({
             </div>
           )}
 
+          {activeTab === 'materials' && (
+            <SiteMaterialsTab project={project} supervisorName={supervisor.name} />
+          )}
+
           {activeTab === 'logs' && (
             <div className="lg:col-span-4 p-6 space-y-6">
               <div className="flex items-center justify-between">
@@ -1281,7 +1301,7 @@ export function SupervisorPortal({
                                   <span className="inline-flex items-center gap-1"><Users size={11} /> {entry.painterName}</span>
                                   <span className="inline-flex items-center gap-1"><Clock size={11} /> {formatDateTime(entry.timestamp)}</span>
                                   <span className="inline-flex items-center gap-1 text-emerald-400"><Ruler size={11} /> {entry.sqft} SqFt</span>
-                                  <span className="inline-flex items-center gap-1 text-amber-400"><Brush size={11} /> {entry.consumed} {entry.isManual ? 'units' : 'L'} Consumed</span>
+                                  <span className="inline-flex items-center gap-1 text-amber-400"><Brush size={11} /> {entry.consumed} {entry.isManual ? 'units' : consumptionUnit(entry.taskName)} Consumed</span>
                                 </div>
                               </div>
                               {entry.isManual && (
@@ -1598,7 +1618,7 @@ function TaskDetailModal({
               </div>
               <div>
                 <span className="text-zinc-500 block text-[10px]">Material Consumed:</span>
-                <span className="font-bold text-zinc-100">{step.consumedQuantity || 0} L</span>
+                <span className="font-bold text-zinc-100">{step.consumedQuantity || 0} {consumptionUnit(step.name)}</span>
               </div>
               <div>
                 <span className="text-zinc-500 block text-[10px]">Assigned Team:</span>
@@ -1741,7 +1761,7 @@ function WeeklyDetailDrawer({
                       </div>
                       <div>
                         <span className="text-zinc-500 block">Material Consumed:</span>
-                        <span className="font-bold text-zinc-100">{t.step.consumedQuantity || 0} L</span>
+                        <span className="font-bold text-zinc-100">{t.step.consumedQuantity || 0} {consumptionUnit(t.step.name)}</span>
                       </div>
                       <div>
                         <span className="text-zinc-500 block">Completion Date:</span>
@@ -1798,6 +1818,7 @@ function DailyTargetAllocatorModal({
   const [selectedStep, setSelectedStep] = useState<string>('');
   const [targetSqft, setTargetSqft] = useState<number>(0);
   const [targetHours, setTargetHours] = useState<number>(0);
+  const [targetMinutes, setTargetMinutes] = useState<number>(0);
   const [warningAlert, setWarningAlert] = useState<string | null>(null);
 
   const floors = project.floors ?? [];
@@ -1835,8 +1856,10 @@ function DailyTargetAllocatorModal({
       const roomArea = selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0;
       const stepArea = step.stepSqft ?? roomArea;
       if (stepArea) setTargetSqft(stepArea);
-      // Pre-fill target hours with system recommendation
-      setTargetHours(estimateHours(step.name, stepArea || 0));
+      // Pre-fill target hours with system recommendation (split into hours + minutes)
+      const estHrs = estimateHours(step.name, stepArea || 0);
+      setTargetHours(Math.floor(estHrs));
+      setTargetMinutes(Math.round((estHrs - Math.floor(estHrs)) * 60 / 15) * 15);
     }
   };
 
@@ -1860,10 +1883,12 @@ function DailyTargetAllocatorModal({
       return;
     }
 
-    onAssign(selectedPainter, selectedFloor, selectedRoom, selectedStep, targetSqft, targetHours || undefined);
+    const totalHours = targetHours + targetMinutes / 60;
+    onAssign(selectedPainter, selectedFloor, selectedRoom, selectedStep, targetSqft, totalHours > 0 ? totalHours : undefined);
     setSelectedStep('');
     setTargetSqft(0);
     setTargetHours(0);
+    setTargetMinutes(0);
     setWarningAlert(null);
   };
 
@@ -2041,7 +2066,11 @@ function DailyTargetAllocatorModal({
                 const sqft = parseInt(e.target.value) || 0;
                 setTargetSqft(sqft);
                 // Auto-update hours recommendation when sqft changes
-                if (sqft > 0) setTargetHours(estimateHours(stepName, sqft));
+                if (sqft > 0) {
+                  const estHrs = estimateHours(stepName, sqft);
+                  setTargetHours(Math.floor(estHrs));
+                  setTargetMinutes(Math.round((estHrs - Math.floor(estHrs)) * 60 / 15) * 15);
+                }
               }}
               min={0}
               placeholder="e.g. 500"
@@ -2052,18 +2081,35 @@ function DailyTargetAllocatorModal({
               <div className="mt-3">
                 <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   <Timer size={12} className="mr-1 inline" />
-                  Allocated Target Hours
+                  Allocated Target Duration
                   <span className="ml-1.5 text-[10px] font-normal text-slate-400">(system suggests {estimatedHrs}h — adjust for site conditions)</span>
                 </label>
-                <input
-                  type="number"
-                  value={targetHours === 0 ? '' : targetHours}
-                  onChange={(e) => setTargetHours(parseFloat(e.target.value) || 0)}
-                  min={0}
-                  step={0.5}
-                  placeholder={`e.g. ${estimatedHrs}`}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <span className="mb-1 block text-[10px] font-medium text-slate-400">Hours</span>
+                    <select
+                      value={targetHours}
+                      onChange={(e) => setTargetHours(parseInt(e.target.value) || 0)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      {Array.from({ length: 9 }, (_, i) => (
+                        <option key={i} value={i}>{i} hr{i === 1 ? '' : 's'}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <span className="mb-1 block text-[10px] font-medium text-slate-400">Minutes</span>
+                    <select
+                      value={targetMinutes}
+                      onChange={(e) => setTargetMinutes(parseInt(e.target.value) || 0)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      {[0, 15, 30, 45].map((m) => (
+                        <option key={m} value={m}>{m} min</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
             )}
             {/* Productivity & Capacity Info (reference only, never blocks) */}
@@ -2554,7 +2600,7 @@ function PhotoAuditCard({
           {(step.consumedQuantity || 0) > 0 && (
             <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <Brush size={12} />
-              {step.consumedQuantity || 0} {(step.name || '').toLowerCase().includes('putty') || (step.name || '').toLowerCase().includes('powder') ? 'kg' : 'L'}
+              {step.consumedQuantity || 0} {consumptionUnit(step.name)}
             </span>
           )}
           {step.photoGpsVerified && (
@@ -2580,6 +2626,278 @@ function PhotoAuditCard({
           >
             <CheckCircle2 size={18} />
             Approve Quality
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; supervisorName: string }) {
+  const materials = project.materialBillOfQuantities ?? [];
+  const [showEmergency, setShowEmergency] = useState(false);
+  const [emergencyFlash, setEmergencyFlash] = useState<string | null>(null);
+
+  const summary = useMemo(() => {
+    let totalRequired = 0;
+    let totalDelivered = 0;
+    let totalUsedToday = 0;
+    for (const m of materials) {
+      totalRequired += m.totalRequiredQty ?? 0;
+      totalDelivered += m.deliveredQty ?? 0;
+    }
+    const today = todayISO();
+    for (const log of project.dailyLogs ?? []) {
+      if (log.date === today) {
+        for (const c of log.consumption ?? []) {
+          totalUsedToday += c.quantityUsed ?? 0;
+        }
+      }
+    }
+    const remaining = Math.max(0, totalDelivered - totalUsedToday);
+    return { totalRequired, totalDelivered, totalUsedToday, remaining };
+  }, [materials, project.dailyLogs]);
+
+  return (
+    <div className="lg:col-span-4 p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-bold uppercase tracking-widest text-slate-800 dark:text-zinc-100">Site Materials Management</h4>
+          <p className="text-xs text-zinc-400">Real-time stock levels and emergency procurement</p>
+        </div>
+        <button
+          onClick={() => setShowEmergency(true)}
+          className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-600 transition-all active:scale-95"
+        >
+          <Zap size={14} />
+          Emergency Request
+        </button>
+      </div>
+
+      {emergencyFlash && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 animate-fade-in dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400">
+          <CheckCircle2 size={16} />
+          {emergencyFlash}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MaterialStatCard icon={<Package size={16} />} label="Total Required" value={summary.totalRequired.toLocaleString()} tone="brand" />
+        <MaterialStatCard icon={<CheckCircle2 size={16} />} label="Received" value={summary.totalDelivered.toLocaleString()} tone="emerald" />
+        <MaterialStatCard icon={<Brush size={16} />} label="Used Today" value={summary.totalUsedToday.toLocaleString()} tone="amber" />
+        <MaterialStatCard icon={<Package size={16} />} label="Remaining Stock" value={summary.remaining.toLocaleString()} tone={summary.remaining < summary.totalRequired * 0.2 ? 'rose' : 'sky'} />
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
+                <th className="px-4 py-3 font-semibold">Material</th>
+                <th className="px-4 py-3 font-semibold">Category</th>
+                <th className="px-4 py-3 font-semibold">Required</th>
+                <th className="px-4 py-3 font-semibold">Delivered</th>
+                <th className="px-4 py-3 font-semibold">Remaining</th>
+                <th className="px-4 py-3 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {materials.map((m) => {
+                const remaining = Math.max(0, (m.deliveredQty ?? 0) - (m.consumedQuantity ?? 0));
+                const lowStock = remaining < (m.totalRequiredQty ?? 0) * 0.2;
+                const status = m.orderStatus ?? 'PENDING_STORE_ORDER';
+                return (
+                  <tr key={m.id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-700 dark:text-slate-200">{m.name}</p>
+                      {m.brand && <p className="text-xs text-slate-400">{m.brand}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{m.category ?? '—'}</td>
+                    <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">
+                      {(m.totalRequiredQty ?? 0).toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
+                    </td>
+                    <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400">
+                      {(m.deliveredQty ?? 0).toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
+                    </td>
+                    <td className={`px-4 py-3 font-medium ${lowStock ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                      {remaining.toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
+                      {lowStock && <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-600 dark:bg-rose-500/15 dark:text-rose-400"><AlertCircle size={9} />Low</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        status === 'DELIVERED_AT_SITE'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                          : status === 'ORDERED'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300'
+                      }`}>
+                        {status === 'DELIVERED_AT_SITE' ? 'Delivered' : status === 'ORDERED' ? 'Ordered' : 'Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {materials.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-400">
+                    No materials found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showEmergency && (
+        <EmergencyMaterialRequestModal
+          materials={materials}
+          supervisorName={supervisorName}
+          onClose={() => setShowEmergency(false)}
+          onSubmit={(materialName, qty, reason) => {
+            setShowEmergency(false);
+            setEmergencyFlash(`Emergency request sent to Admin: ${qty} units of ${materialName} — ${reason}`);
+            setTimeout(() => setEmergencyFlash(null), 5000);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MaterialStatCard({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: 'brand' | 'emerald' | 'amber' | 'rose' | 'sky' }) {
+  const tones: Record<string, string> = {
+    brand: 'bg-brand-100 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400',
+    emerald: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
+    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400',
+    rose: 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400',
+    sky: 'bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400',
+  };
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className={`mb-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold ${tones[tone]}`}>
+        {icon}
+        {label}
+      </div>
+      <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function EmergencyMaterialRequestModal({
+  materials,
+  supervisorName,
+  onClose,
+  onSubmit,
+}: {
+  materials: MaterialItem[];
+  supervisorName: string;
+  onClose: () => void;
+  onSubmit: (materialName: string, qty: number, reason: string) => void;
+}) {
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>(materials[0]?.id ?? '');
+  const [qty, setQty] = useState<number>(1);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const selectedMaterial = materials.find((m) => m.id === selectedMaterialId);
+
+  const handleSubmit = () => {
+    if (!selectedMaterialId || qty <= 0) {
+      setError('Select a material and enter a valid quantity.');
+      return;
+    }
+    if (!reason.trim()) {
+      setError('Please provide a reason for the emergency request.');
+      return;
+    }
+    onSubmit(selectedMaterial?.name ?? 'Material', qty, reason.trim());
+  };
+
+  const inputClass =
+    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-amber-300 bg-white shadow-2xl dark:border-amber-500/30 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-amber-100 px-5 py-4 dark:border-amber-500/20">
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+              <Zap size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Emergency Material Request</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{supervisorName} · Ping Admin for instant stock</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">Select Material</label>
+            <select value={selectedMaterialId} onChange={(e) => setSelectedMaterialId(e.target.value)} className={inputClass}>
+              <option value="">Select material...</option>
+              {materials.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.brand ? `(${m.brand})` : ''} — Stock: {m.deliveredQty ?? 0} {m.unit ?? ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">Quantity Needed</label>
+            <input
+              type="number"
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              min={1}
+              autoFocus
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">Reason / Urgency</label>
+            <textarea
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); setError(null); }}
+              rows={3}
+              placeholder="e.g. Running out of primer, 3 rooms pending..."
+              className={`${inputClass} resize-none`}
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+              <AlertCircle size={14} />
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+          <button onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-amber-500/20 hover:bg-amber-600 active:scale-[0.98]"
+          >
+            <Send size={15} />
+            Send to Admin
           </button>
         </div>
       </div>

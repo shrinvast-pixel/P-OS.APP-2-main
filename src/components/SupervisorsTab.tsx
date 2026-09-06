@@ -12,8 +12,11 @@ import {
   Activity,
   LogIn,
   LogOut,
+  Target,
+  GraduationCap,
 } from 'lucide-react';
-import type { PaintProject, Supervisor, SupervisorSessionState } from '@/types';
+import type { PaintProject, Supervisor, SupervisorSessionState, FinishingStep, DailyTarget } from '@/types';
+import { todayISO, getStepArea, getCompletedArea } from '@/utils';
 
 interface SupervisorsTabProps {
   supervisors: Supervisor[];
@@ -27,14 +30,18 @@ type KpiRating = 'top' | 'ontrack' | 'review';
 interface KpiData {
   onTimePct: number;
   dailySqftEfficiency: number;
+  targetCompletionPct: number;
   avgCheckIn: string;
   rating: KpiRating;
+  totalAssigned: number;
+  totalCompleted: number;
+  totalSqftCompleted: number;
 }
 
 const RATING_CONFIG: Record<KpiRating, { label: string; badge: string; icon: typeof Award }> = {
   top: { label: 'Top Performer', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400', icon: Award },
   ontrack: { label: 'On Track', badge: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400', icon: Activity },
-  review: { label: 'Needs Review', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400', icon: Clock },
+  review: { label: 'Needs Review / Training', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400', icon: GraduationCap },
 };
 
 function computeKpi(project: PaintProject, supervisorId: string): KpiData {
@@ -59,31 +66,43 @@ function computeKpi(project: PaintProject, supervisorId: string): KpiData {
   const checkInMins = (seed * 17) % 60;
   const avgCheckIn = `${checkInHours}:${checkInMins.toString().padStart(2, '0')} AM`;
 
-  let rating: KpiRating = 'ontrack';
-  if (onTimePct >= 75 && dailySqftEfficiency >= 300) rating = 'top';
-  else if (onTimePct < 40) rating = 'review';
+  const todaysTargets = (project.dailyTargets ?? []).filter((t) => t.date === todayISO());
+  const targetCompletionPct = todaysTargets.length > 0
+    ? Math.round((todaysTargets.filter((t) => t.status === 'COMPLETED').length / todaysTargets.length) * 100)
+    : onTimePct;
 
-  return { onTimePct, dailySqftEfficiency, avgCheckIn, rating };
+  let rating: KpiRating = 'ontrack';
+  if (onTimePct >= 75 && targetCompletionPct >= 75) rating = 'top';
+  else if (onTimePct < 40 || targetCompletionPct < 40) rating = 'review';
+
+  return { onTimePct, dailySqftEfficiency, targetCompletionPct, avgCheckIn, rating, totalAssigned: total, totalCompleted: completed, totalSqftCompleted: totalSqft };
 }
 
 function computePainterKpi(project: PaintProject, painterId: string): KpiData {
-  const painterSteps: { status: string; stepSqft?: number }[] = [];
+  const painterSteps: { status: string; step: FinishingStep; room: any }[] = [];
   for (const floor of project.floors ?? []) {
     for (const room of floor.rooms ?? []) {
       for (const step of room.finishingSteps ?? []) {
         if (step.painterIds?.includes(painterId)) {
-          painterSteps.push({ status: step.status, stepSqft: step.stepSqft });
+          painterSteps.push({ status: step.status, step, room });
         }
       }
     }
   }
   const total = painterSteps.length || 1;
-  const completed = painterSteps.filter((s) => s.status === 'COMPLETED').length;
+  const completedSteps = painterSteps.filter((s) => s.status === 'COMPLETED');
+  const completed = completedSteps.length;
   const onTimePct = Math.round((completed / total) * 100);
 
-  const totalSqft = painterSteps.reduce((sum, s) => sum + (s.stepSqft ?? 0), 0);
+  const totalSqftCompleted = completedSteps.reduce((sum, s) => sum + getCompletedArea(s.step, s.room), 0);
+  const totalSqftAssigned = painterSteps.reduce((sum, s) => sum + getStepArea(s.step, s.room), 0);
   const actualDays = project.projectDetails.actualDays ?? 1;
-  const dailySqftEfficiency = actualDays > 0 ? Math.round(totalSqft / actualDays) : 0;
+  const dailySqftEfficiency = actualDays > 0 ? Math.round(totalSqftCompleted / actualDays) : 0;
+
+  const todaysTargets = (project.dailyTargets ?? []).filter((t) => t.painterId === painterId && t.date === todayISO());
+  const targetCompletionPct = todaysTargets.length > 0
+    ? Math.round((todaysTargets.filter((t) => t.status === 'COMPLETED').length / todaysTargets.length) * 100)
+    : onTimePct;
 
   const seed = parseInt(painterId.replace(/\D/g, ''), 10) || 0;
   const checkInHours = 8 + (seed % 3);
@@ -91,10 +110,10 @@ function computePainterKpi(project: PaintProject, painterId: string): KpiData {
   const avgCheckIn = `${checkInHours}:${checkInMins.toString().padStart(2, '0')} AM`;
 
   let rating: KpiRating = 'ontrack';
-  if (onTimePct >= 75) rating = 'top';
-  else if (onTimePct < 40) rating = 'review';
+  if (onTimePct >= 75 && targetCompletionPct >= 75) rating = 'top';
+  else if (onTimePct < 40 || targetCompletionPct < 40) rating = 'review';
 
-  return { onTimePct, dailySqftEfficiency, avgCheckIn, rating };
+  return { onTimePct, dailySqftEfficiency, targetCompletionPct, avgCheckIn, rating, totalAssigned: painterSteps.length, totalCompleted: completed, totalSqftCompleted };
 }
 
 export function SupervisorsTab({ supervisors, project, onSetLeadSupervisor, onSupervisorSessionChange }: SupervisorsTabProps) {
