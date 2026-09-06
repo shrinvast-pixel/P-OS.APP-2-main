@@ -30,8 +30,7 @@ import {
   filterInteriorMaterials,
   estimateHours,
   getStepProductivity,
-  maxDailySqft,
-  PAINTER_DAILY_CAPACITY_HOURS,
+
 } from '@/utils';
 
 interface SupervisorPortalProps {
@@ -486,7 +485,10 @@ export function SupervisorPortal({
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in px-4">
       {/* 1. Metrics Top */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm dark:border-slate-800">
+        <button
+          onClick={() => setActiveTab('weekly')}
+          className="group rounded-2xl border border-slate-200 bg-slate-900 p-5 text-left text-white shadow-sm transition-all hover:border-brand-500/50 hover:shadow-lg active:scale-[0.98] dark:border-slate-800"
+        >
           <div className="flex items-center gap-3 opacity-80 mb-4">
             <TrendingUp size={18} className="text-brand-400" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Global Progress</span>
@@ -494,15 +496,18 @@ export function SupervisorPortal({
           <div className="flex items-end justify-between">
             <div>
               <p className="text-3xl font-bold">{avgProgress}%</p>
-              <p className="text-xs text-slate-400">Overall Project</p>
+              <p className="text-xs text-slate-400">Overall Project · {completedTasks}/{totalAssigned} done</p>
             </div>
           </div>
           <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full bg-brand-500" style={{ width: `${avgProgress}%` }} />
+            <div className="h-full bg-brand-500 transition-all duration-500 group-hover:bg-brand-400" style={{ width: `${avgProgress}%` }} />
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button
+          onClick={() => setActiveTab('logs')}
+          className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:border-brand-500/50 hover:shadow-lg active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900"
+        >
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Target size={18} className="text-emerald-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">SqFt Done Today</span>
@@ -510,13 +515,16 @@ export function SupervisorPortal({
           <div className="flex items-end justify-between">
             <div>
               <p className="text-3xl font-bold text-slate-800 dark:text-slate-100">{completedSqFtToday.toLocaleString()}</p>
-              <p className="text-xs text-slate-500">Metric sum</p>
+              <p className="text-xs text-slate-500">sqft completed today</p>
             </div>
-            <TrendingUp size={20} className="text-emerald-500 mb-1" />
+            <TrendingUp size={20} className="text-emerald-500 mb-1 transition-transform group-hover:scale-110" />
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button
+          onClick={() => setActiveTab('rooms')}
+          className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:border-brand-500/50 hover:shadow-lg active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900"
+        >
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Layers size={18} className="text-amber-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Total Steps</span>
@@ -527,7 +535,7 @@ export function SupervisorPortal({
               Steps: <span className="text-emerald-600">{completedTasks} Comp</span> / <span className="text-amber-600">{inProgressTasks} InProg</span> / {totalAssigned - completedTasks - inProgressTasks} NotStarted
             </p>
           </div>
-        </div>
+        </button>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
@@ -1875,22 +1883,7 @@ function DailyTargetAllocatorModal({
   const stepName = currentSelectedStepObj?.name;
   const productivityRate = getStepProductivity(stepName);
   const estimatedHrs = estimateHours(stepName, targetSqft);
-  const dailyMaxSqft = maxDailySqft(stepName);
-  // Sum existing targets for this painter today (reference only, never blocks)
-  const painterExistingHours = (project.dailyTargets ?? [])
-    .filter((t) => t.painterId === selectedPainter && t.date === todayISO() && t.stepId !== selectedStep)
-    .reduce((sum, t) => {
-      let existingStepName: string | undefined;
-      for (const f of project.floors ?? []) {
-        for (const r of f.rooms ?? []) {
-          const s = (r.finishingSteps ?? []).find((fs) => fs.id === t.stepId);
-          if (s) { existingStepName = s.name; break; }
-        }
-        if (existingStepName) break;
-      }
-      return sum + estimateHours(existingStepName, t.targetSqft);
-    }, 0);
-  const totalHoursWithNew = painterExistingHours + (targetHours || estimatedHrs);
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -2089,14 +2082,7 @@ function DailyTargetAllocatorModal({
                   <span className="font-medium text-slate-500 dark:text-slate-400">{productivityRate.label} Rate</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">{productivityRate.sqftPerHour} sqft/hr</span>
                 </div>
-                <div className="mt-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-500 dark:text-slate-400">Painter Daily Max (reference)</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">{dailyMaxSqft} sqft ({PAINTER_DAILY_CAPACITY_HOURS}h shift)</span>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-500 dark:text-slate-400">Painter Total Today (incl. new)</span>
-                  <span className="text-slate-700 dark:text-slate-200">{Math.round(totalHoursWithNew * 10) / 10} / {PAINTER_DAILY_CAPACITY_HOURS} hrs</span>
-                </div>
+
               </div>
             )}
           </div>
