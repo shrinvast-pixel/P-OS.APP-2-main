@@ -30,8 +30,7 @@ import {
   filterInteriorMaterials,
   estimateHours,
   getStepProductivity,
-  maxDailySqft,
-  PAINTER_DAILY_CAPACITY_HOURS,
+
 } from '@/utils';
 
 interface SupervisorPortalProps {
@@ -1875,22 +1874,7 @@ function DailyTargetAllocatorModal({
   const stepName = currentSelectedStepObj?.name;
   const productivityRate = getStepProductivity(stepName);
   const estimatedHrs = estimateHours(stepName, targetSqft);
-  const dailyMaxSqft = maxDailySqft(stepName);
-  // Sum existing targets for this painter today (reference only, never blocks)
-  const painterExistingHours = (project.dailyTargets ?? [])
-    .filter((t) => t.painterId === selectedPainter && t.date === todayISO() && t.stepId !== selectedStep)
-    .reduce((sum, t) => {
-      let existingStepName: string | undefined;
-      for (const f of project.floors ?? []) {
-        for (const r of f.rooms ?? []) {
-          const s = (r.finishingSteps ?? []).find((fs) => fs.id === t.stepId);
-          if (s) { existingStepName = s.name; break; }
-        }
-        if (existingStepName) break;
-      }
-      return sum + estimateHours(existingStepName, t.targetSqft);
-    }, 0);
-  const totalHoursWithNew = painterExistingHours + (targetHours || estimatedHrs);
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -2089,14 +2073,7 @@ function DailyTargetAllocatorModal({
                   <span className="font-medium text-slate-500 dark:text-slate-400">{productivityRate.label} Rate</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">{productivityRate.sqftPerHour} sqft/hr</span>
                 </div>
-                <div className="mt-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-500 dark:text-slate-400">Painter Daily Max (reference)</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">{dailyMaxSqft} sqft ({PAINTER_DAILY_CAPACITY_HOURS}h shift)</span>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-500 dark:text-slate-400">Painter Total Today (incl. new)</span>
-                  <span className="text-slate-700 dark:text-slate-200">{Math.round(totalHoursWithNew * 10) / 10} / {PAINTER_DAILY_CAPACITY_HOURS} hrs</span>
-                </div>
+
               </div>
             )}
           </div>
