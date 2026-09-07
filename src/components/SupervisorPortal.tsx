@@ -491,8 +491,59 @@ export function SupervisorPortal({
     }));
   }, [allTasks, painters, project.dailyLogs, logFilterDate]);
 
+  // Active blockers: tasks paused with a BLOCKER: prefix in pauseReason
+  const activeBlockers = useMemo(() => {
+    const result: { floorName: string; roomName: string; stepName: string; painterName: string; blockerReason: string; step: FinishingStep }[] = [];
+    for (const t of allTasks) {
+      if (t.step.status === 'PAUSED' && t.step.pauseReason?.startsWith('BLOCKER:')) {
+        const painterNames = painters
+          .filter((p) => t.step.painterIds?.includes(p.id))
+          .map((p) => p.name)
+          .join(', ') || 'Unassigned';
+        result.push({
+          floorName: t.floorName,
+          roomName: t.roomName,
+          stepName: t.step.name,
+          painterName: painterNames,
+          blockerReason: t.step.pauseReason.replace('BLOCKER:', '').trim(),
+          step: t.step,
+        });
+      }
+    }
+    return result;
+  }, [allTasks, painters]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in px-4">
+      {/* Sticky Blocker Alert Banner */}
+      {activeBlockers.length > 0 && (
+        <div className="sticky top-0 z-50 space-y-2 rounded-2xl border-2 border-red-500 bg-red-950/95 p-4 shadow-2xl shadow-red-500/20 backdrop-blur-md">
+          {activeBlockers.map((b, i) => (
+            <div key={i} className="flex items-center gap-3 rounded-xl bg-red-500/20 px-4 py-3 ring-1 ring-red-500/40 animate-pulse">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-red-500 text-white shadow-lg shadow-red-500/30">
+                <AlertTriangle size={20} className="animate-pulse" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-white">
+                  CRITICAL BLOCKER: <span className="text-red-300">{b.painterName}</span> blocked on{' '}
+                  <span className="text-red-300">{b.stepName}</span> due to{' '}
+                  <span className="text-red-300">{b.blockerReason}</span>
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-red-200">
+                  {b.floorName} — {b.roomName}
+                </p>
+              </div>
+              <button
+                onClick={() => setTaskDetailTarget({ floorId: allTasks.find(t => t.step.id === b.step.id)?.floorId ?? '', roomId: allTasks.find(t => t.step.id === b.step.id)?.roomId ?? '', step: b.step, roomName: b.roomName })}
+                className="shrink-0 rounded-lg bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-600 hover:bg-red-50 transition-all"
+              >
+                View Task
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 1. Metrics Top */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <button onClick={() => setActiveTab('weekly')} className="cursor-pointer rounded-2xl border border-slate-200 bg-slate-900 p-5 text-left text-white shadow-sm transition-all hover:ring-2 hover:ring-brand-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800">
@@ -2398,20 +2449,40 @@ function PainterKpiModal({
 }) {
   const painterTasks = allTasks.filter((t) => t.step.painterIds?.includes(painter.id));
   const completedTasks = painterTasks.filter((t) => t.step.status === 'COMPLETED' || t.step.status === 'PENDING_INSPECTION');
-  const totalSqft = completedTasks.reduce((sum, t) => sum + (t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0), 0);
 
-  const estimatedTotalHours = completedTasks.reduce((sum, t) => {
-    const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
-    return sum + estimateHours(t.step.name, sqft);
-  }, 0);
+  // --- LIVE METRICS: computed from submitted daily logs and step data ---
+  const totalSqft = completedTasks.reduce(
+    (sum, t) => sum + (t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0),
+    0,
+  );
 
-  const sqftPerHour = estimatedTotalHours > 0 ? Math.round(totalSqft / estimatedTotalHours) : 0;
+  const totalMaterialConsumed = completedTasks.reduce(
+    (sum, t) => sum + (t.step.consumedQuantity ?? 0),
+    0,
+  );
+
+  // --- ACTUAL EXECUTION HOURS (from startedAt/completedAt timestamps) ---
+  const actualExecutionHours = useMemo(() => {
+    let totalHours = 0;
+    for (const t of completedTasks) {
+      if (t.step.startedAt && t.step.completedAt) {
+        const hours = (t.step.completedAt - t.step.startedAt) / (1000 * 60 * 60);
+        if (hours > 0 && hours < 24) totalHours += hours;
+      } else {
+        const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
+        totalHours += estimateHours(t.step.name, sqft);
+      }
+    }
+    return totalHours;
+  }, [completedTasks]);
+
+  const sqftPerHour = actualExecutionHours > 0 ? Math.round(totalSqft / actualExecutionHours) : 0;
 
   // --- SCHEDULE VARIANCE ---
   const scheduleVariance = useMemo(() => {
     let allocatedTotalMin = 0;
     let actualTotalMin = 0;
-    const perTask: { name: string; allocatedMin: number; actualMin: number; variancePct: number }[] = [];
+    const perTask: { name: string; allocatedMin: number; actualMin: number; variancePct: number; unrealistic: boolean }[] = [];
 
     for (const t of completedTasks) {
       const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
@@ -2419,8 +2490,13 @@ function PainterKpiModal({
       const allocatedMin = targetHrs * 60;
 
       let actualMin = 0;
+      let unrealistic = false;
       if (t.step.startedAt && t.step.completedAt) {
         actualMin = (t.step.completedAt - t.step.startedAt) / 60000;
+        // Flag unrealistic fast completions: < 5 mins for > 100 sqft
+        if (actualMin < 5 && sqft > 100) {
+          unrealistic = true;
+        }
       } else if (t.step.estimatedDurationDays) {
         actualMin = t.step.estimatedDurationDays * 8 * 60;
       } else {
@@ -2431,11 +2507,12 @@ function PainterKpiModal({
       actualTotalMin += actualMin;
 
       const variancePct = allocatedMin > 0 ? Math.round(((actualMin - allocatedMin) / allocatedMin) * 100) : 0;
-      perTask.push({ name: t.step.name, allocatedMin: Math.round(allocatedMin), actualMin: Math.round(actualMin), variancePct });
+      perTask.push({ name: t.step.name, allocatedMin: Math.round(allocatedMin), actualMin: Math.round(actualMin), variancePct, unrealistic });
     }
 
     const overallPct = allocatedTotalMin > 0 ? Math.round(((actualTotalMin - allocatedTotalMin) / allocatedTotalMin) * 100) : 0;
-    return { allocatedTotalMin: Math.round(allocatedTotalMin), actualTotalMin: Math.round(actualTotalMin), overallPct, perTask };
+    const unrealisticCount = perTask.filter((p) => p.unrealistic).length;
+    return { allocatedTotalMin: Math.round(allocatedTotalMin), actualTotalMin: Math.round(actualTotalMin), overallPct, perTask, unrealisticCount };
   }, [completedTasks]);
 
   // --- QUALITY & REWORK ---
@@ -2453,15 +2530,18 @@ function PainterKpiModal({
     const clockInTs = painter.clockInAt;
     let clockInStr = '—';
     let lateMin = 0;
+    let shiftAnomaly = false;
     if (clockInTs) {
       const d = new Date(clockInTs);
       clockInStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       const scheduledMin = 8 * 60; // 8:00 AM
       const actualMin = d.getHours() * 60 + d.getMinutes();
       lateMin = Math.max(0, actualMin - scheduledMin);
+      // Shift Anomaly Flag if clock-in is > 2 hours late
+      shiftAnomaly = lateMin > 120;
     }
     const onTime = lateMin === 0;
-    return { scheduledTime, clockInStr, lateMin, onTime };
+    return { scheduledTime, clockInStr, lateMin, onTime, shiftAnomaly };
   }, [painter.clockInAt]);
 
   // --- MATERIAL YIELD ---
@@ -2473,8 +2553,11 @@ function PainterKpiModal({
       ideal += sqft * 0.12; // ~0.12 L/kg per sqft benchmark
       actual += t.step.consumedQuantity ?? 0;
     }
-    const efficiencyPct = ideal > 0 ? Math.round((ideal / actual) * 100) : 100;
-    return { ideal: Math.round(ideal), actual: Math.round(actual), efficiencyPct };
+    // Material Yield % = (Actual Consumed / Ideal Material Consumption) * 100
+    const yieldPct = ideal > 0 ? Math.round((actual / ideal) * 100) : 0;
+    // Wastage % = excess over ideal as percentage of ideal
+    const wastagePct = ideal > 0 && actual > ideal ? Math.round(((actual - ideal) / ideal) * 100) : 0;
+    return { ideal: Math.round(ideal), actual: Math.round(actual), yieldPct, wastagePct };
   }, [completedTasks]);
 
   const onTimeClockIns = dailyTargets.filter((t) => t.painterId === painter.id).length;
@@ -2484,6 +2567,9 @@ function PainterKpiModal({
   const expectedSqftPerHour = avgProductivity.sqftPerHour || 50;
 
   // --- ACTION BADGES (based on Speed + Quality Pass Rate) ---
+  // TOP PERFORMER: >90% pass rate AND speed >= expected
+  // NEEDS REVIEW: low speed OR low quality
+  // ON TRACK: everything else
   const speedScore = sqftPerHour >= expectedSqftPerHour ? 'high' : sqftPerHour >= expectedSqftPerHour * 0.7 ? 'mid' : 'low';
   const qualityScore = qualityStats.passRate >= 90 ? 'high' : qualityStats.passRate >= 70 ? 'mid' : 'low';
 
@@ -2550,6 +2636,13 @@ function PainterKpiModal({
               </div>
               <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{sqftPerHour}</p>
             </div>
+            <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <Package size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-wider">Total Material Consumed</span>
+              </div>
+              <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{totalMaterialConsumed.toLocaleString()} <span className="text-xs font-medium text-slate-400">L/kg</span></p>
+            </div>
           </div>
 
           {/* SCHEDULE VARIANCE */}
@@ -2575,12 +2668,15 @@ function PainterKpiModal({
                 <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
                   {scheduleVariance.perTask.slice(0, 3).map((pt, i) => (
                     <div key={i} className="flex justify-between text-[11px]">
-                      <span className="truncate text-slate-500">{pt.name}</span>
-                      <span className={`shrink-0 font-bold ${pt.variancePct > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {pt.variancePct > 0 ? '+' : ''}{pt.variancePct}%
+                      <span className="truncate text-slate-500">{pt.name}{pt.unrealistic && <span className="ml-1 text-red-500 font-black">⚠ UNREALISTIC</span>}</span>
+                      <span className={`shrink-0 font-bold ${pt.unrealistic ? 'text-red-500' : pt.variancePct > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {pt.unrealistic ? 'FLAG' : `${pt.variancePct > 0 ? '+' : ''}${pt.variancePct}%`}
                       </span>
                     </div>
                   ))}
+                  {scheduleVariance.unrealisticCount > 0 && (
+                    <p className="text-[10px] font-bold text-red-500 pt-1">{scheduleVariance.unrealisticCount} task(s) flagged: completed too fast for area size</p>
+                  )}
                 </div>
               )}
             </div>
@@ -2621,6 +2717,12 @@ function PainterKpiModal({
                   {punctuality.onTime ? 'On Time' : `${punctuality.lateMin} min late`}
                 </span>
               </div>
+              {punctuality.shiftAnomaly && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-red-500 border border-red-500/20">
+                  <AlertTriangle size={11} />
+                  Shift Anomaly: Clock-in &gt; 2 hours late
+                </div>
+              )}
             </div>
           </div>
 
@@ -2637,11 +2739,19 @@ function PainterKpiModal({
                 <span className="font-bold">{materialYield.actual} units</span>
               </div>
               <div className="flex justify-between">
-                <span>Yield Efficiency:</span>
-                <span className={`font-bold ${materialYield.efficiencyPct >= 100 ? 'text-emerald-500' : materialYield.efficiencyPct >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
-                  {materialYield.efficiencyPct}%
+                <span>Material Yield %:</span>
+                <span className={`font-bold ${materialYield.yieldPct <= 100 ? 'text-emerald-500' : materialYield.yieldPct <= 120 ? 'text-amber-500' : 'text-rose-500'}`}>
+                  {materialYield.yieldPct}%
                 </span>
               </div>
+              {materialYield.wastagePct > 0 && (
+                <div className="flex justify-between">
+                  <span>Material Excess / Wastage:</span>
+                  <span className={`font-bold ${materialYield.wastagePct > 20 ? 'text-rose-500' : 'text-amber-500'}`}>
+                    +{materialYield.wastagePct}%
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2649,9 +2759,10 @@ function PainterKpiModal({
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Work History & Attendance</p>
             <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-              <div className="flex justify-between"><span>Est. Total Work Hours:</span><span className="font-bold">{estimatedTotalHours.toFixed(1)} hrs</span></div>
+              <div className="flex justify-between"><span>Est. Total Work Hours:</span><span className="font-bold">{actualExecutionHours.toFixed(1)} hrs</span></div>
               <div className="flex justify-between"><span>Completion Rate:</span><span className="font-bold">{scheduledCount > 0 ? Math.round((completedTasks.length / scheduledCount) * 100) : 0}%</span></div>
               <div className="flex justify-between"><span>Current Clock State:</span><span className="font-bold">{(painter.clockState ?? 'CLOCKED_OUT').replace('_', ' ')}</span></div>
+              <div className="flex justify-between"><span>Site Blockers Raised:</span><span className="font-bold">{painterTasks.filter((t) => t.step.pauseReason?.startsWith('BLOCKER:')).length}</span></div>
             </div>
           </div>
 
