@@ -2765,20 +2765,25 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
   // Match a step or log name to a material item via keyword matching.
   const matchMaterialByName = (name: string, mats: MaterialItem[]): MaterialItem | undefined => {
     const n = name.toLowerCase().replace(/[\s-]/g, '_');
+    const findMat = (keyword: string) =>
+      mats.find((m) => (m.name || '').toLowerCase().includes(keyword));
+
+    // Specific product keys first — order matters to avoid mis-matching.
     if (n.includes('white_cement') || n.includes('putty'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('white cement') || (m.name || '').toLowerCase().includes('putty'));
-    if (n.includes('interior') || n.includes('emulsion'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('interior') || (m.name || '').toLowerCase().includes('emulsion'));
-    if (n.includes('varnish') || n.includes('clear'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('varnish') || (m.name || '').toLowerCase().includes('clear'));
+      return findMat('white cement putty');
+    if (n.includes('economy_emulsion') || n.includes('interior') || n.includes('emulsion'))
+      return findMat('interior emulsion');
+    if (n.includes('clear_varnish') || n.includes('varnish') || n.includes('clear'))
+      return findMat('joinery specialty') ?? findMat('varnish') ?? findMat('clear');
+    // Fallbacks for other categories.
     if (n.includes('primer'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('primer'));
+      return findMat('primer');
     if (n.includes('enamel') || n.includes('wood') || n.includes('metal') || n.includes('joinery'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('enamel') || (m.name || '').toLowerCase().includes('wood') || (m.name || '').toLowerCase().includes('metal'));
+      return findMat('enamel') ?? findMat('wood') ?? findMat('metal');
     if (n.includes('wallpaper'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('wallpaper'));
+      return findMat('wallpaper');
     if (n.includes('texture'))
-      return mats.find((m) => (m.name || '').toLowerCase().includes('texture'));
+      return findMat('texture');
     return undefined;
   };
 
