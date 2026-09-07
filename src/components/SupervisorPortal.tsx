@@ -2407,25 +2407,99 @@ function PainterKpiModal({
 
   const sqftPerHour = estimatedTotalHours > 0 ? Math.round(totalSqft / estimatedTotalHours) : 0;
 
+  // --- SCHEDULE VARIANCE ---
+  const scheduleVariance = useMemo(() => {
+    let allocatedTotalMin = 0;
+    let actualTotalMin = 0;
+    const perTask: { name: string; allocatedMin: number; actualMin: number; variancePct: number }[] = [];
+
+    for (const t of completedTasks) {
+      const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
+      const targetHrs = t.step.targetHours ?? estimateHours(t.step.name, sqft);
+      const allocatedMin = targetHrs * 60;
+
+      let actualMin = 0;
+      if (t.step.startedAt && t.step.completedAt) {
+        actualMin = (t.step.completedAt - t.step.startedAt) / 60000;
+      } else if (t.step.estimatedDurationDays) {
+        actualMin = t.step.estimatedDurationDays * 8 * 60;
+      } else {
+        actualMin = allocatedMin;
+      }
+
+      allocatedTotalMin += allocatedMin;
+      actualTotalMin += actualMin;
+
+      const variancePct = allocatedMin > 0 ? Math.round(((actualMin - allocatedMin) / allocatedMin) * 100) : 0;
+      perTask.push({ name: t.step.name, allocatedMin: Math.round(allocatedMin), actualMin: Math.round(actualMin), variancePct });
+    }
+
+    const overallPct = allocatedTotalMin > 0 ? Math.round(((actualTotalMin - allocatedTotalMin) / allocatedTotalMin) * 100) : 0;
+    return { allocatedTotalMin: Math.round(allocatedTotalMin), actualTotalMin: Math.round(actualTotalMin), overallPct, perTask };
+  }, [completedTasks]);
+
+  // --- QUALITY & REWORK ---
+  const qualityStats = useMemo(() => {
+    const totalSubmissions = completedTasks.length;
+    const approved = completedTasks.filter((t) => t.step.approvedAt || t.step.qaVerified).length;
+    const reworkCount = completedTasks.reduce((sum, t) => sum + (t.step.reworkCount ?? 0), 0);
+    const passRate = totalSubmissions > 0 ? Math.round((approved / totalSubmissions) * 100) : 0;
+    return { totalSubmissions, approved, reworkCount, passRate };
+  }, [completedTasks]);
+
+  // --- PUNCTUALITY ---
+  const punctuality = useMemo(() => {
+    const scheduledTime = '08:00 AM';
+    const clockInTs = painter.clockInAt;
+    let clockInStr = '—';
+    let lateMin = 0;
+    if (clockInTs) {
+      const d = new Date(clockInTs);
+      clockInStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const scheduledMin = 8 * 60; // 8:00 AM
+      const actualMin = d.getHours() * 60 + d.getMinutes();
+      lateMin = Math.max(0, actualMin - scheduledMin);
+    }
+    const onTime = lateMin === 0;
+    return { scheduledTime, clockInStr, lateMin, onTime };
+  }, [painter.clockInAt]);
+
+  // --- MATERIAL YIELD ---
+  const materialYield = useMemo(() => {
+    let ideal = 0;
+    let actual = 0;
+    for (const t of completedTasks) {
+      const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
+      ideal += sqft * 0.12; // ~0.12 L/kg per sqft benchmark
+      actual += t.step.consumedQuantity ?? 0;
+    }
+    const efficiencyPct = ideal > 0 ? Math.round((ideal / actual) * 100) : 100;
+    return { ideal: Math.round(ideal), actual: Math.round(actual), efficiencyPct };
+  }, [completedTasks]);
+
   const onTimeClockIns = dailyTargets.filter((t) => t.painterId === painter.id).length;
   const scheduledCount = painterTasks.length;
 
   const avgProductivity = getStepProductivity(undefined);
   const expectedSqftPerHour = avgProductivity.sqftPerHour || 50;
 
+  // --- ACTION BADGES (based on Speed + Quality Pass Rate) ---
+  const speedScore = sqftPerHour >= expectedSqftPerHour ? 'high' : sqftPerHour >= expectedSqftPerHour * 0.7 ? 'mid' : 'low';
+  const qualityScore = qualityStats.passRate >= 90 ? 'high' : qualityStats.passRate >= 70 ? 'mid' : 'low';
+
   let actionTag: { label: string; color: string };
-  if (sqftPerHour >= expectedSqftPerHour * 1.1) {
-    actionTag = { label: 'Top Performer', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
-  } else if (sqftPerHour >= expectedSqftPerHour * 0.7) {
-    actionTag = { label: 'On Track', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' };
+  if (speedScore === 'high' && qualityScore === 'high') {
+    actionTag = { label: 'TOP PERFORMER', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+  } else if (speedScore === 'low' || qualityScore === 'low') {
+    actionTag = { label: 'NEEDS REVIEW', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
   } else {
-    actionTag = { label: 'Slow - Needs Review/Training', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+    actionTag = { label: 'ON TRACK', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' };
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <InitialsAvatar name={painter.name} size={44} className="ring-2 ring-brand-500/30" />
@@ -2440,11 +2514,13 @@ function PainterKpiModal({
         </div>
 
         <div className="space-y-4">
+          {/* ACTION BADGE */}
           <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider ${actionTag.color}`}>
             <Award size={12} />
             {actionTag.label}
           </div>
 
+          {/* CORE STATS GRID */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
               <div className="flex items-center gap-1.5 text-slate-400 mb-1">
@@ -2476,6 +2552,100 @@ function PainterKpiModal({
             </div>
           </div>
 
+          {/* SCHEDULE VARIANCE */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Schedule Variance</p>
+            <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between">
+                <span>Allocated Target Time:</span>
+                <span className="font-bold">{scheduleVariance.allocatedTotalMin} min</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Actual Execution Time:</span>
+                <span className="font-bold">{scheduleVariance.actualTotalMin} min</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Overall Variance:</span>
+                <span className={`font-bold ${scheduleVariance.overallPct > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  {scheduleVariance.overallPct > 0 ? '+' : ''}{scheduleVariance.overallPct}%
+                  {scheduleVariance.overallPct < 0 && ' (ahead of schedule)'}
+                </span>
+              </div>
+              {scheduleVariance.perTask.length > 0 && (
+                <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
+                  {scheduleVariance.perTask.slice(0, 3).map((pt, i) => (
+                    <div key={i} className="flex justify-between text-[11px]">
+                      <span className="truncate text-slate-500">{pt.name}</span>
+                      <span className={`shrink-0 font-bold ${pt.variancePct > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {pt.variancePct > 0 ? '+' : ''}{pt.variancePct}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* QUALITY & REWORK */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Quality & Rework</p>
+            <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between">
+                <span>First-Time Quality Pass Rate:</span>
+                <span className={`font-bold ${qualityStats.passRate >= 90 ? 'text-emerald-500' : qualityStats.passRate >= 70 ? 'text-amber-500' : 'text-rose-500'}`}>
+                  {qualityStats.passRate}% ({qualityStats.approved}/{qualityStats.totalSubmissions})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Reject & Rework Instances:</span>
+                <span className={`font-bold ${qualityStats.reworkCount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{qualityStats.reworkCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* PUNCTUALITY */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Shift Punctuality</p>
+            <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between">
+                <span>Scheduled Shift:</span>
+                <span className="font-bold">{punctuality.scheduledTime}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Clock-In Time:</span>
+                <span className="font-bold">{punctuality.clockInStr}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Punctuality:</span>
+                <span className={`font-bold ${punctuality.onTime ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {punctuality.onTime ? 'On Time' : `${punctuality.lateMin} min late`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* MATERIAL YIELD */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Material Yield</p>
+            <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between">
+                <span>Ideal Material Consumption:</span>
+                <span className="font-bold">{materialYield.ideal} units</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Actual Consumed:</span>
+                <span className="font-bold">{materialYield.actual} units</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Yield Efficiency:</span>
+                <span className={`font-bold ${materialYield.efficiencyPct >= 100 ? 'text-emerald-500' : materialYield.efficiencyPct >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
+                  {materialYield.efficiencyPct}%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* WORK HISTORY & ATTENDANCE */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Work History & Attendance</p>
             <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
@@ -2775,6 +2945,8 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
       return findMat('interior emulsion');
     if (n.includes('clear_varnish') || n.includes('varnish') || n.includes('clear'))
       return findMat('joinery specialty') ?? findMat('varnish') ?? findMat('clear');
+    if (n.includes('sliding_window') || n.includes('sliding window') || n.includes('window'))
+      return findMat('sliding window') ?? mats.find((m) => (m.category || '').toLowerCase() === 'joinery');
     // Fallbacks for other categories.
     if (n.includes('primer'))
       return findMat('primer');
