@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Sun, CircleCheck as CheckCircle2, Clock, ClipboardList, Layers, Brush, CircleUser as UserCircle2, TrendingUp, Calendar, CalendarClock, Users, TriangleAlert as AlertTriangle, FileText, ClipboardCheck, ChevronDown, Check, Target, Plus, Ruler, LogIn, LogOut, MapPin, Timer, Coffee, X, Camera, ImageOff, Hourglass, AlarmClock, ZoomIn, ZoomOut, Eye, Package, Zap, Send, AlertCircle } from 'lucide-react';
+import { Sun, CircleCheck as CheckCircle2, Clock, ClipboardList, Layers, Brush, CircleUser as UserCircle2, TrendingUp, Calendar, CalendarClock, Users, TriangleAlert as AlertTriangle, FileText, ClipboardCheck, ChevronDown, Check, Target, Plus, Ruler, LogIn, LogOut, MapPin, Timer, Coffee, X, Camera, ImageOff, Hourglass, AlarmClock, ZoomIn, ZoomOut, Eye, Package, Zap, Send, AlertCircle, Award } from 'lucide-react';
 import type {
   PaintProject,
   Supervisor,
@@ -10,6 +10,7 @@ import type {
   ClockState,
   SupervisorSessionState,
   MaterialItem,
+  DailyTarget,
 } from '@/types';
 import { StatusBadge } from './StatusBadge';
 import { DailyLogModal, type DailyLogForm } from './DailyLogModal';
@@ -203,6 +204,7 @@ export function SupervisorPortal({
     initialMode: 'before' | 'after' | 'compare';
   } | null>(null);
   const [, setTick] = useState(0);
+  const [kpiPainter, setKpiPainter] = useState<Painter | null>(null);
 
   const toggleFloor = (id: string) =>
     setOpenFloors((prev) => {
@@ -493,7 +495,7 @@ export function SupervisorPortal({
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in px-4">
       {/* 1. Metrics Top */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm dark:border-slate-800">
+        <button onClick={() => setActiveTab('weekly')} className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-left text-white shadow-sm transition-all hover:ring-2 hover:ring-brand-500/50 dark:border-slate-800">
           <div className="flex items-center gap-3 opacity-80 mb-4">
             <TrendingUp size={18} className="text-brand-400" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Global Progress</span>
@@ -507,9 +509,9 @@ export function SupervisorPortal({
           <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
             <div className="h-full bg-brand-500" style={{ width: `${avgProgress}%` }} />
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button onClick={() => setActiveTab('logs')} className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-emerald-500/50 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Target size={18} className="text-emerald-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">SqFt Done Today</span>
@@ -521,9 +523,9 @@ export function SupervisorPortal({
             </div>
             <TrendingUp size={20} className="text-emerald-500 mb-1" />
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button onClick={() => setActiveTab('rooms')} className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-amber-500/50 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Layers size={18} className="text-amber-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Total Steps</span>
@@ -534,7 +536,7 @@ export function SupervisorPortal({
               Steps: <span className="text-emerald-600">{completedTasks} Comp</span> / <span className="text-amber-600">{inProgressTasks} InProg</span> / {totalAssigned - completedTasks - inProgressTasks} NotStarted
             </p>
           </div>
-        </div>
+        </button>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
@@ -629,7 +631,7 @@ export function SupervisorPortal({
               const cState = p.clockState ?? 'CLOCKED_OUT';
               const isActive = cState !== 'CLOCKED_OUT';
               return (
-                <div key={p.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-800/30">
+                <button key={p.id} onClick={() => setKpiPainter(p)} className="w-full rounded-xl border border-slate-100 bg-slate-50/50 p-3 text-left transition-all hover:ring-2 hover:ring-brand-500/40 dark:border-slate-800 dark:bg-slate-800/30">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="h-8 w-8 rounded-full bg-slate-200 grid place-items-center text-xs font-bold text-slate-500">
                       {p.name.charAt(0)}
@@ -657,7 +659,7 @@ export function SupervisorPortal({
                       {p.clockInAt && <span className="text-zinc-200">{new Date(p.clockInAt).toLocaleDateString()} {new Date(p.clockInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1431,6 +1433,9 @@ export function SupervisorPortal({
           onQaApprove={onQaApprove}
           onUpdatePhoto={onUpdatePhoto}
         />
+      )}
+      {kpiPainter && (
+        <PainterKpiModal painter={kpiPainter} allTasks={allTasks} dailyTargets={project.dailyTargets ?? []} onClose={() => setKpiPainter(null)} />
       )}
     </div>
   );
@@ -2375,6 +2380,125 @@ function ApprovalLightboxModal({
           </div>
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+function PainterKpiModal({
+  painter,
+  allTasks,
+  dailyTargets,
+  onClose,
+}: {
+  painter: Painter;
+  allTasks: { floorId: string; floorName: string; roomId: string; roomName: string; roomSqft?: number; step: FinishingStep }[];
+  dailyTargets: DailyTarget[];
+  onClose: () => void;
+}) {
+  const painterTasks = allTasks.filter((t) => t.step.painterIds?.includes(painter.id));
+  const completedTasks = painterTasks.filter((t) => t.step.status === 'COMPLETED' || t.step.status === 'PENDING_INSPECTION');
+  const totalSqft = completedTasks.reduce((sum, t) => sum + (t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0), 0);
+
+  const estimatedTotalHours = completedTasks.reduce((sum, t) => {
+    const sqft = t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0;
+    return sum + estimateHours(t.step.name, sqft);
+  }, 0);
+
+  const sqftPerHour = estimatedTotalHours > 0 ? Math.round(totalSqft / estimatedTotalHours) : 0;
+
+  const onTimeClockIns = dailyTargets.filter((t) => t.painterId === painter.id).length;
+  const scheduledCount = painterTasks.length;
+
+  const avgProductivity = getStepProductivity(undefined);
+  const expectedSqftPerHour = avgProductivity.sqftPerHour || 50;
+
+  let actionTag: { label: string; color: string };
+  if (sqftPerHour >= expectedSqftPerHour * 1.1) {
+    actionTag = { label: 'Top Performer', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
+  } else if (sqftPerHour >= expectedSqftPerHour * 0.7) {
+    actionTag = { label: 'On Track', color: 'bg-brand-500/15 text-brand-400 border-brand-500/30' };
+  } else {
+    actionTag = { label: 'Slow - Needs Review/Training', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <InitialsAvatar name={painter.name} size={44} className="ring-2 ring-brand-500/30" />
+            <div>
+              <h3 className="text-lg font-black text-slate-800 dark:text-zinc-100">{painter.name}</h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Painter KPI Dashboard</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider ${actionTag.color}`}>
+            <Award size={12} />
+            {actionTag.label}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <Clock size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-wider">On-Time Check-Ins</span>
+              </div>
+              <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{onTimeClockIns}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <CheckCircle2 size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-wider">Tasks Completed</span>
+              </div>
+              <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{completedTasks.length}<span className="text-xs font-medium text-slate-400"> / {scheduledCount}</span></p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <Ruler size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-wider">Total SqFt Done</span>
+              </div>
+              <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{totalSqft.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                <Zap size={12} />
+                <span className="text-[9px] font-bold uppercase tracking-wider">SqFt / Hour</span>
+              </div>
+              <p className="text-xl font-black text-slate-700 dark:text-zinc-100">{sqftPerHour}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Work History & Attendance</p>
+            <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between"><span>Est. Total Work Hours:</span><span className="font-bold">{estimatedTotalHours.toFixed(1)} hrs</span></div>
+              <div className="flex justify-between"><span>Completion Rate:</span><span className="font-bold">{scheduledCount > 0 ? Math.round((completedTasks.length / scheduledCount) * 100) : 0}%</span></div>
+              <div className="flex justify-between"><span>Current Clock State:</span><span className="font-bold">{(painter.clockState ?? 'CLOCKED_OUT').replace('_', ' ')}</span></div>
+            </div>
+          </div>
+
+          {completedTasks.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50 max-h-40 overflow-y-auto">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Recent Completed Tasks</p>
+              <div className="space-y-1.5">
+                {completedTasks.slice(0, 5).map((t) => (
+                  <div key={t.step.id} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-slate-600 dark:text-slate-300">{t.step.name}</span>
+                    <span className="shrink-0 font-bold text-slate-500">{t.step.areaCompleted || t.step.completedSqft || t.step.stepSqft || t.roomSqft || 0} sqft</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
