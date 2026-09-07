@@ -2762,25 +2762,97 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
   const [showEmergency, setShowEmergency] = useState(false);
   const [emergencyFlash, setEmergencyFlash] = useState<string | null>(null);
 
+  // Map a finishing step name to a material category keyword for consumption matching.
+  const stepToMaterialCategory = (stepName: string): string | null => {
+    const n = stepName.toLowerCase();
+    if (n.includes('putty')) return 'putty';
+    if (n.includes('primer')) return 'primer';
+    if (n.includes('emulsion') || n.includes('paint') || n.includes('coat') || n.includes('finish') || n.includes('touchup')) return 'emulsion';
+    if (n.includes('enamel') || n.includes('wood') || n.includes('metal') || n.includes('joinery')) return 'enamel';
+    if (n.includes('wallpaper')) return 'wallpaper';
+    if (n.includes('texture')) return 'texture';
+    return null;
+  };
+
+  // Per-material consumption from completed tasks today + daily log entries.
+  const perMaterialUsage = useMemo(() => {
+    const today = todayISO();
+    const usageByMaterialId = new Map<string, { usedToday: number; usedTotal: number }>();
+    for (const m of materials) {
+      usageByMaterialId.set(m.id, { usedToday: 0, usedTotal: 0 });
+    }
+
+    // 1. Consumption from completed / pending-inspection tasks (consumedQuantity field).
+    const allSteps: FinishingStep[] = [];
+    for (const floor of project.floors ?? []) {
+      for (const room of floor?.rooms ?? []) {
+        for (const step of room?.finishingSteps ?? []) {
+          if (step) allSteps.push(step);
+        }
+      }
+    }
+
+    for (const step of allSteps) {
+      const consumed = step.consumedQuantity ?? 0;
+      if (consumed <= 0) continue;
+      const isDone = step.status === 'COMPLETED' || step.status === 'PENDING_INSPECTION';
+      if (!isDone) continue;
+
+      const cat = stepToMaterialCategory(step.name);
+      if (!cat) continue;
+
+      // Match by category keyword in material name or category field.
+      const matched = materials.find((m) => {
+        const mName = (m.name || '').toLowerCase();
+        const mCat = (m.category || '').toLowerCase();
+        return mCat === cat || mName.includes(cat);
+      });
+      if (!matched) continue;
+
+      const entry = usageByMaterialId.get(matched.id)!;
+      entry.usedTotal += consumed;
+
+      // Check if the task was completed today.
+      const completionDate = step.completedAt
+        ? new Date(step.completedAt).toISOString().slice(0, 10)
+        : step.afterPhotoAt
+          ? new Date(step.afterPhotoAt).toISOString().slice(0, 10)
+          : null;
+      if (completionDate === today) {
+        entry.usedToday += consumed;
+      }
+    }
+
+    // 2. Consumption from supervisor daily log entries (manual material consumption).
+    for (const log of project.dailyLogs ?? []) {
+      const isToday = log.date === today;
+      for (const c of log.consumption ?? []) {
+        const matched = materials.find((m) => m.id === c.materialId || (m.name || '').toLowerCase() === (c.materialName || '').toLowerCase());
+        if (!matched) continue;
+        const entry = usageByMaterialId.get(matched.id)!;
+        entry.usedTotal += c.quantityUsed ?? 0;
+        if (isToday) entry.usedToday += c.quantityUsed ?? 0;
+      }
+    }
+
+    return usageByMaterialId;
+  }, [materials, project.floors, project.dailyLogs]);
+
   const summary = useMemo(() => {
     let totalRequired = 0;
     let totalDelivered = 0;
     let totalUsedToday = 0;
+    let totalUsedAll = 0;
     for (const m of materials) {
       totalRequired += m.totalRequiredQty ?? 0;
       totalDelivered += m.deliveredQty ?? 0;
+      const u = perMaterialUsage.get(m.id) ?? { usedToday: 0, usedTotal: 0 };
+      totalUsedToday += u.usedToday;
+      totalUsedAll += u.usedTotal;
     }
-    const today = todayISO();
-    for (const log of project.dailyLogs ?? []) {
-      if (log.date === today) {
-        for (const c of log.consumption ?? []) {
-          totalUsedToday += c.quantityUsed ?? 0;
-        }
-      }
-    }
-    const remaining = Math.max(0, totalDelivered - totalUsedToday);
+    const remaining = Math.max(0, totalDelivered - totalUsedAll);
     return { totalRequired, totalDelivered, totalUsedToday, remaining };
-  }, [materials, project.dailyLogs]);
+  }, [materials, perMaterialUsage]);
 
   return (
     <div className="lg:col-span-4 p-6 space-y-6">
@@ -2821,13 +2893,15 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Required</th>
                 <th className="px-4 py-3 font-semibold">Delivered</th>
+                <th className="px-4 py-3 font-semibold">Used Today</th>
                 <th className="px-4 py-3 font-semibold">Remaining</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {materials.map((m) => {
-                const remaining = Math.max(0, (m.deliveredQty ?? 0) - (m.consumedQuantity ?? 0));
+                const usage = perMaterialUsage.get(m.id) ?? { usedToday: 0, usedTotal: 0 };
+                const remaining = Math.max(0, (m.deliveredQty ?? 0) - usage.usedTotal);
                 const lowStock = remaining < (m.totalRequiredQty ?? 0) * 0.2;
                 const status = m.orderStatus ?? 'PENDING_STORE_ORDER';
                 return (
@@ -2842,6 +2916,9 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
                     </td>
                     <td className="px-4 py-3 text-emerald-600 dark:text-emerald-400">
                       {(m.deliveredQty ?? 0).toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-amber-600 dark:text-amber-400">
+                      {usage.usedToday.toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
                     </td>
                     <td className={`px-4 py-3 font-medium ${lowStock ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'}`}>
                       {remaining.toLocaleString()} <span className="text-xs text-slate-400">{m.unit}</span>
@@ -2863,7 +2940,7 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
               })}
               {materials.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-400">
                     No materials found.
                   </td>
                 </tr>
