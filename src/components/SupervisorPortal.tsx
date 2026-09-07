@@ -178,7 +178,7 @@ export function SupervisorPortal({
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [showDailyLog, setShowDailyLog] = useState(false);
   const [showTargetAllocator, setShowTargetAllocator] = useState(false);
-  const [activeTab, setActiveTab] = useState<'rooms' | 'weekly' | 'agenda' | 'logs' | 'materials'>('rooms');
+  const [activeTab, setActiveTab] = useState<'floors' | 'weekly' | 'agenda' | 'logs' | 'materials'>('floors');
   const [logFilterDate, setLogFilterDate] = useState<string>('');
   const [photoUploadTarget, setPhotoUploadTarget] = useState<{ floorId: string; roomId: string; step: FinishingStep } | null>(null);
   const [qaTarget, setQaTarget] = useState<{ floorId: string; roomId: string; step: FinishingStep; roomName: string } | null>(null);
@@ -525,7 +525,7 @@ export function SupervisorPortal({
           </div>
         </button>
 
-        <button onClick={() => setActiveTab('rooms')} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-amber-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800 dark:bg-slate-900">
+        <button onClick={() => setActiveTab('floors')} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-amber-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Layers size={18} className="text-amber-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Total Steps</span>
@@ -785,9 +785,9 @@ export function SupervisorPortal({
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex border-b border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50">
           <button
-            onClick={() => setActiveTab('rooms')}
+            onClick={() => setActiveTab('floors')}
             className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all ${
-              activeTab === 'rooms' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400'
+              activeTab === 'floors' ? 'text-brand-600 border-b-2 border-brand-500' : 'text-slate-400'
             }`}
           >
             Floor & Rooms
@@ -827,7 +827,7 @@ export function SupervisorPortal({
         </div>
 
         <div className="grid lg:grid-cols-4 min-h-[500px]">
-          {activeTab === 'rooms' && (
+          {activeTab === 'floors' && (
             <>
               {/* Floor Sidebar */}
               <div className="lg:col-span-1 border-r border-slate-100 dark:border-slate-800 p-4 space-y-2">
@@ -2762,16 +2762,24 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
   const [showEmergency, setShowEmergency] = useState(false);
   const [emergencyFlash, setEmergencyFlash] = useState<string | null>(null);
 
-  // Map a finishing step name to a material category keyword for consumption matching.
-  const stepToMaterialCategory = (stepName: string): string | null => {
-    const n = stepName.toLowerCase();
-    if (n.includes('putty')) return 'putty';
-    if (n.includes('primer')) return 'primer';
-    if (n.includes('emulsion') || n.includes('paint') || n.includes('coat') || n.includes('finish') || n.includes('touchup')) return 'emulsion';
-    if (n.includes('enamel') || n.includes('wood') || n.includes('metal') || n.includes('joinery')) return 'enamel';
-    if (n.includes('wallpaper')) return 'wallpaper';
-    if (n.includes('texture')) return 'texture';
-    return null;
+  // Match a step or log name to a material item via keyword matching.
+  const matchMaterialByName = (name: string, mats: MaterialItem[]): MaterialItem | undefined => {
+    const n = name.toLowerCase().replace(/[\s-]/g, '_');
+    if (n.includes('white_cement') || n.includes('putty'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('white cement') || (m.name || '').toLowerCase().includes('putty'));
+    if (n.includes('interior') || n.includes('emulsion'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('interior') || (m.name || '').toLowerCase().includes('emulsion'));
+    if (n.includes('varnish') || n.includes('clear'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('varnish') || (m.name || '').toLowerCase().includes('clear'));
+    if (n.includes('primer'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('primer'));
+    if (n.includes('enamel') || n.includes('wood') || n.includes('metal') || n.includes('joinery'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('enamel') || (m.name || '').toLowerCase().includes('wood') || (m.name || '').toLowerCase().includes('metal'));
+    if (n.includes('wallpaper'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('wallpaper'));
+    if (n.includes('texture'))
+      return mats.find((m) => (m.name || '').toLowerCase().includes('texture'));
+    return undefined;
   };
 
   // Per-material consumption from completed tasks today + daily log entries.
@@ -2798,15 +2806,7 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
       const isDone = step.status === 'COMPLETED' || step.status === 'PENDING_INSPECTION';
       if (!isDone) continue;
 
-      const cat = stepToMaterialCategory(step.name);
-      if (!cat) continue;
-
-      // Match by category keyword in material name or category field.
-      const matched = materials.find((m) => {
-        const mName = (m.name || '').toLowerCase();
-        const mCat = (m.category || '').toLowerCase();
-        return mCat === cat || mName.includes(cat);
-      });
+      const matched = matchMaterialByName(step.name, materials);
       if (!matched) continue;
 
       const entry = usageByMaterialId.get(matched.id)!;
@@ -2827,7 +2827,8 @@ function SiteMaterialsTab({ project, supervisorName }: { project: PaintProject; 
     for (const log of project.dailyLogs ?? []) {
       const isToday = log.date === today;
       for (const c of log.consumption ?? []) {
-        const matched = materials.find((m) => m.id === c.materialId || (m.name || '').toLowerCase() === (c.materialName || '').toLowerCase());
+        const matched = materials.find((m) => m.id === c.materialId)
+          ?? matchMaterialByName(c.materialName || '', materials);
         if (!matched) continue;
         const entry = usageByMaterialId.get(matched.id)!;
         entry.usedTotal += c.quantityUsed ?? 0;
