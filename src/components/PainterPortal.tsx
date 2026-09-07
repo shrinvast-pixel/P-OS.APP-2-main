@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { CircleUser as UserCircle2, Layers, Brush, Play, Pause, CircleCheck as CheckCircle2, Ruler, Target, Camera, X, ClipboardCheck, LogIn, LogOut, Coffee, MapPin, Timer, ChevronRight, AlertTriangle } from 'lucide-react';
-import type { PaintProject, Painter, FinishingStep, TaskStatus, DailyTarget, ClockState } from '@/types';
+import { CircleUser as UserCircle2, Layers, Brush, Play, Pause, CircleCheck as CheckCircle2, Ruler, Target, Camera, X, ClipboardCheck, LogIn, LogOut, Coffee, MapPin, Timer, ChevronRight, AlertTriangle, ShieldAlert, Flag, ChevronDown } from 'lucide-react';
+import type { PaintProject, Painter, FinishingStep, TaskStatus, DailyTarget, ClockState, MaterialItem } from '@/types';
 import { ErrorBoundary } from './ErrorBoundary';
 import { todayISO, compressImageBase64, distributeTasksIntoSlots, estimateHours, getStepProductivity, maxDailySqft } from '@/utils';
 
@@ -28,6 +28,25 @@ const PAUSE_REASONS = [
   "Site Access Issue",
   "Other"
 ];
+
+const BLOCKER_REASONS = [
+  "Material Delay",
+  "Wet Wall",
+  "Scaffolding Issue",
+  "No Power/Water",
+];
+
+const COAT_STEPS = [
+  "Primer",
+  "Putty Coat 1",
+  "Putty Coat 2",
+  "Sanding",
+  "Top Coat 1",
+  "Top Coat 2",
+] as const;
+type CoatStep = (typeof COAT_STEPS)[number];
+
+const MAX_SHIFT_MS = 12 * 60 * 60 * 1000;
 
 const STEP_ICONS: Record<string, string> = {
   putty: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
@@ -110,6 +129,12 @@ export function PainterPortal({
     roomId: string;
     step: FinishingStep;
   } | null>(null);
+  const [blockerTask, setBlockerTask] = useState<{
+    floorId: string;
+    roomId: string;
+    step: FinishingStep;
+  } | null>(null);
+  const [reportedBlockers, setReportedBlockers] = useState<{ stepId: string; reason: string; at: number }[]>([]);
   const [, setTick] = useState(0);
 
   const clockState: ClockState = painter.clockState ?? 'CLOCKED_OUT';
@@ -138,6 +163,13 @@ export function PainterPortal({
   };
 
   const elapsedMs = clockInAt ? Date.now() - clockInAt - totalBreakMs - (breakStartAt ? Date.now() - breakStartAt : 0) : 0;
+  const shiftExceeded = elapsedMs > MAX_SHIFT_MS;
+  const cappedElapsedMs = Math.min(elapsedMs, MAX_SHIFT_MS);
+
+  const siteMaterials = useMemo(() => {
+    const mats = project.materialBillOfQuantities ?? project.materials ?? [];
+    return mats.filter((m: MaterialItem) => (m.deliveredQty ?? m.orderedQty ?? 0) > 0 || m.orderStatus === 'DELIVERED_AT_SITE');
+  }, [project.materialBillOfQuantities, project.materials]);
 
   const handlePunchIn = () => {
     if (navigator.geolocation) {
@@ -263,8 +295,14 @@ export function PainterPortal({
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Shift Status: <span className={clockState !== 'CLOCKED_OUT' ? 'text-emerald-400' : 'text-zinc-500'}>{clockState.replace('_', ' ')}</span></p>
                 <p className="font-mono text-3xl font-black tracking-tighter text-white">
-                  {clockState === 'CLOCKED_OUT' ? '--:--:--' : fmtDuration(elapsedMs)}
+                  {clockState === 'CLOCKED_OUT' ? '--:--:--' : fmtDuration(cappedElapsedMs)}
                 </p>
+                {shiftExceeded && (
+                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-red-300 ring-1 ring-red-500/40 animate-pulse">
+                    <ShieldAlert size={11} />
+                    Shift &gt; 12h — Punch Out!
+                  </div>
+                )}
               </div>
             </div>
             
@@ -334,10 +372,12 @@ export function PainterPortal({
                       key={t.step.id}
                       task={t}
                       isActive={t.step.status === 'IN_PROGRESS'}
+                      reportedBlockers={reportedBlockers.filter(b => b.stepId === t.step.id)}
                       onStart={() => handleStartWork(t)}
                       onPause={() => handlePauseWork(t)}
                       onSubmit={() => handleCompleteWork(t)}
                       onQuickSubmit={() => handleQuickSubmit(t)}
+                      onReportBlocker={() => setBlockerTask({ floorId: t.floorId, roomId: t.roomId, step: t.step })}
                     />
                   ))}
                 </div>
@@ -405,6 +445,7 @@ export function PainterPortal({
           <MaterialConsumptionModal
             step={completionTask.step}
             roomSqft={completionTask.roomSqft}
+            siteMaterials={siteMaterials}
             onClose={() => setCompletionTask(null)}
             onConfirm={(qty, area, photoUrl) => {
               const step = completionTask?.step;
@@ -423,6 +464,18 @@ export function PainterPortal({
             }}
           />
         </ErrorBoundary>
+      )}
+
+      {blockerTask && (
+        <BlockerReportModal
+          step={blockerTask.step}
+          onClose={() => setBlockerTask(null)}
+          onConfirm={(reason) => {
+            setReportedBlockers(prev => [...prev, { stepId: blockerTask.step.id, reason, at: Date.now() }]);
+            onTaskStatusChange(blockerTask.floorId, blockerTask.roomId, blockerTask.step.id, blockerTask.step.progressPct ?? 20, 'PAUSED', undefined, undefined, `BLOCKER: ${reason}`);
+            setBlockerTask(null);
+          }}
+        />
       )}
 
       {pauseTask && (
@@ -449,17 +502,21 @@ export function PainterPortal({
 function ShiftTaskCard({
   task,
   isActive,
+  reportedBlockers,
   onStart,
   onPause,
   onSubmit,
   onQuickSubmit,
+  onReportBlocker,
 }: {
   task: { floorName: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number };
   isActive: boolean;
+  reportedBlockers: { stepId: string; reason: string; at: number }[];
   onStart: () => void;
   onPause: () => void;
   onSubmit: () => void;
   onQuickSubmit: () => void;
+  onReportBlocker: () => void;
 }) {
   const isPending = task.step.status === 'NOT_STARTED' || task.step.status === 'ASSIGNED';
   const isPaused = task.step.status === 'PAUSED';
@@ -467,6 +524,12 @@ function ShiftTaskCard({
   const isCompleted = task.step.status === 'COMPLETED';
 
   const isSandingOrPutty = task.step.name.toLowerCase().includes('sanding') || task.step.name.toLowerCase().includes('putty');
+
+  const [activeCoat, setActiveCoat] = useState<CoatStep | null>(null);
+  const [dailySqft, setDailySqft] = useState('');
+  const totalTarget = task.targetSqft || task.step.stepSqft || task.roomInteriorSqft || 0;
+  const loggedSqft = Number(dailySqft) || 0;
+  const coatProgressPct = totalTarget > 0 ? Math.min(100, Math.round((loggedSqft / totalTarget) * 100)) : 0;
 
   return (
     <div className={`group relative overflow-hidden rounded-2xl border transition-all ${isActive ? 'border-brand-500 bg-brand-50/30 ring-1 ring-brand-500/20 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300 dark:bg-slate-900 dark:border-slate-800'}`}>
@@ -506,6 +569,62 @@ function ShiftTaskCard({
           )}
         </div>
 
+        {reportedBlockers.length > 0 && (
+          <div className="mb-4 space-y-1.5">
+            {reportedBlockers.map((b, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 px-3 py-2 text-[10px] font-bold text-red-600 dark:text-red-400">
+                <ShieldAlert size={12} />
+                Blocker: {b.reason}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isActive && (
+          <div className="mb-4 space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Coat / Step Progress</label>
+              <div className="flex flex-wrap gap-1.5">
+                {COAT_STEPS.map((coat) => (
+                  <button
+                    key={coat}
+                    onClick={() => setActiveCoat(activeCoat === coat ? null : coat)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeCoat === coat ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20' : 'bg-white dark:bg-slate-700 text-slate-500 dark:text-zinc-400 border border-slate-200 dark:border-slate-600 hover:border-brand-400'}`}
+                  >
+                    {coat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {activeCoat && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Log Daily SqFt — {activeCoat}</label>
+                  <span className="text-[10px] font-bold text-brand-500">Target: {totalTarget} sqft</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={dailySqft === '0' ? '' : dailySqft}
+                    onChange={(e) => setDailySqft((parseInt(e.target.value) || 0).toString())}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-sm font-bold text-slate-800 dark:text-zinc-100 outline-none focus:border-brand-500"
+                  />
+                  <span className="absolute right-4 top-3 text-xs font-bold text-slate-400">sqft</span>
+                </div>
+                {totalTarget > 0 && (
+                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+                    <div className="h-full bg-brand-500 transition-all" style={{ width: `${coatProgressPct}%` }} />
+                  </div>
+                )}
+                {coatProgressPct > 0 && (
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-zinc-400">{loggedSqft} / {totalTarget} sqft ({coatProgressPct}%)</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
           {isPending || isPaused ? (
             <button
@@ -517,6 +636,13 @@ function ShiftTaskCard({
             </button>
           ) : isActive ? (
             <>
+              <button
+                onClick={(e) => { e.stopPropagation(); onReportBlocker(); }}
+                className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 px-3 py-4 text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all active:scale-[0.98]"
+              >
+                <Flag size={14} />
+                Blocker
+              </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onPause(); }}
                 className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 py-4 text-xs font-black uppercase tracking-widest text-zinc-300 hover:bg-slate-700 transition-all active:scale-[0.98]"
