@@ -495,7 +495,7 @@ export function SupervisorPortal({
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in px-4">
       {/* 1. Metrics Top */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <button onClick={() => setActiveTab('weekly')} className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-left text-white shadow-sm transition-all hover:ring-2 hover:ring-brand-500/50 dark:border-slate-800">
+        <button onClick={() => setActiveTab('weekly')} className="cursor-pointer rounded-2xl border border-slate-200 bg-slate-900 p-5 text-left text-white shadow-sm transition-all hover:ring-2 hover:ring-brand-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800">
           <div className="flex items-center gap-3 opacity-80 mb-4">
             <TrendingUp size={18} className="text-brand-400" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Global Progress</span>
@@ -511,7 +511,7 @@ export function SupervisorPortal({
           </div>
         </button>
 
-        <button onClick={() => setActiveTab('logs')} className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-emerald-500/50 dark:border-slate-800 dark:bg-slate-900">
+        <button onClick={() => setActiveTab('logs')} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-emerald-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Target size={18} className="text-emerald-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">SqFt Done Today</span>
@@ -525,7 +525,7 @@ export function SupervisorPortal({
           </div>
         </button>
 
-        <button onClick={() => setActiveTab('rooms')} className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-amber-500/50 dark:border-slate-800 dark:bg-slate-900">
+        <button onClick={() => setActiveTab('rooms')} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all hover:ring-2 hover:ring-amber-500/50 hover:shadow-lg hover:-translate-y-0.5 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 text-slate-500 mb-4">
             <Layers size={18} className="text-amber-500" />
             <span className="text-[10px] font-bold uppercase tracking-wider">Total Steps</span>
