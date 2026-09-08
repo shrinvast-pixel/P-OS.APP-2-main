@@ -469,6 +469,70 @@ export function Dashboard({ projects, onProjectsChange }: DashboardProps) {
     });
   };
 
+  const handleTaskSwitch = (
+    pauseTarget: { floorId: string; roomId: string; stepId: string; progressPct: number },
+    startTarget: { floorId: string; roomId: string; stepId: string },
+  ) => {
+    updateProject((prev) => ({
+      ...prev,
+      floors: prev.floors.map((floor) => {
+        // Pause the active task
+        if (floor.id === pauseTarget.floorId) {
+          return {
+            ...floor,
+            rooms: floor.rooms.map((room) =>
+              room.id !== pauseTarget.roomId
+                ? room
+                : {
+                    ...room,
+                    finishingSteps: room.finishingSteps.map((step) =>
+                      step.id !== pauseTarget.stepId
+                        ? step
+                        : {
+                            ...step,
+                            status: 'PAUSED' as TaskStatus,
+                            progressPct: pauseTarget.progressPct,
+                            pauseReason: step.pauseReason || undefined,
+                          },
+                    ),
+                  },
+            ),
+          };
+        }
+        // Start the newly selected task
+        if (floor.id === startTarget.floorId) {
+          return {
+            ...floor,
+            rooms: floor.rooms.map((room) =>
+              room.id !== startTarget.roomId
+                ? room
+                : {
+                    ...room,
+                    finishingSteps: room.finishingSteps.map((step) =>
+                      step.id !== startTarget.stepId
+                        ? step
+                        : {
+                            ...step,
+                            status: 'IN_PROGRESS' as TaskStatus,
+                            progressPct: Math.max(step.progressPct ?? 0, 10),
+                            startedAt: step.startedAt ?? Date.now(),
+                            reworkRequestedAt: undefined,
+                            pauseReason: undefined,
+                          },
+                    ),
+                  },
+            ),
+          };
+        }
+        return floor;
+      }),
+      dailyTargets: (prev.dailyTargets ?? []).map((t) => {
+        if (t.stepId === startTarget.stepId) return { ...t, status: 'IN_PROGRESS' as const };
+        return t;
+      }),
+    }));
+  };
+
   const handlePainterPhotoUpload = (
     floorId: string,
     roomId: string,
@@ -966,6 +1030,7 @@ export function Dashboard({ projects, onProjectsChange }: DashboardProps) {
             project={localProject}
             painter={activePainter}
             onTaskStatusChange={handleTaskProgress}
+            onTaskSwitch={handleTaskSwitch}
             onPhotoUpload={handlePainterPhotoUpload}
             onClockChange={handleClockChange}
           />
