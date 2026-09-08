@@ -299,6 +299,8 @@ export interface Painter {
   totalBreakMs?: number;
   gpsVerified?: boolean;
   siteLabel?: string;
+  complianceViolation?: boolean;
+  complianceNote?: string;
 }
 
 export interface DailyTarget {

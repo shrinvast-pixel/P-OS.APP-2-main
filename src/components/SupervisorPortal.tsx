@@ -1876,6 +1876,7 @@ function DailyTargetAllocatorModal({
   const [targetHours, setTargetHours] = useState<number>(0);
   const [targetMinutes, setTargetMinutes] = useState<number>(0);
   const [warningAlert, setWarningAlert] = useState<string | null>(null);
+  const [userTouchedDuration, setUserTouchedDuration] = useState(false);
 
   const floors = project.floors ?? [];
   const selectedFloorObj = floors.find((f) => f.id === selectedFloor);
@@ -1883,8 +1884,18 @@ function DailyTargetAllocatorModal({
   const selectedRoomObj = rooms.find((r) => r.id === selectedRoom);
   const steps = selectedRoomObj?.finishingSteps ?? [];
 
+  // Calculate remaining SqFt for a step: total step SqFt minus already-assigned across all painters
+  const getRemainingSqft = (stepId: string, stepArea: number): number => {
+    const today = new Date().toISOString().slice(0, 10);
+    const assignedSum = (project.dailyTargets ?? [])
+      .filter(t => t.stepId === stepId && t.date === today)
+      .reduce((sum, t) => sum + (t.targetSqft ?? 0), 0);
+    return Math.max(0, stepArea - assignedSum);
+  };
+
   const handleStepChange = (stepId: string) => {
     setSelectedStep(stepId);
+    setUserTouchedDuration(false);
     if (!stepId) {
       setWarningAlert(null);
       return;
@@ -1911,9 +1922,11 @@ function DailyTargetAllocatorModal({
 
       const roomArea = selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0;
       const stepArea = step.stepSqft ?? roomArea;
-      if (stepArea) setTargetSqft(stepArea);
+      // Set target to remaining unassigned SqFt
+      const remaining = getRemainingSqft(step.id, stepArea || 0);
+      setTargetSqft(remaining);
       // Pre-fill target hours with system recommendation (split into hours + minutes)
-      const estHrs = estimateHours(step.name, stepArea || 0);
+      const estHrs = estimateHours(step.name, remaining || stepArea || 0);
       setTargetHours(Math.floor(estHrs));
       setTargetMinutes(Math.round((estHrs - Math.floor(estHrs)) * 60 / 15) * 15);
     }
@@ -1940,16 +1953,24 @@ function DailyTargetAllocatorModal({
     }
 
     const totalHours = targetHours + targetMinutes / 60;
+    // User-selected duration explicitly overrides any auto-calculated value
     onAssign(selectedPainter, selectedFloor, selectedRoom, selectedStep, targetSqft, totalHours > 0 ? totalHours : undefined);
     setSelectedStep('');
     setTargetSqft(0);
     setTargetHours(0);
     setTargetMinutes(0);
+    setUserTouchedDuration(false);
     setWarningAlert(null);
   };
 
   const currentSelectedStepObj = steps.find((s) => s.id === selectedStep);
   const isStepBlocked = currentSelectedStepObj && (currentSelectedStepObj.status === 'COMPLETED' || currentSelectedStepObj.status === 'IN_PROGRESS' || currentSelectedStepObj.status === 'PENDING_INSPECTION');
+
+  // Remaining SqFt for the currently selected step
+  const selectedStepArea = currentSelectedStepObj
+    ? (currentSelectedStepObj.stepSqft ?? selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0)
+    : 0;
+  const selectedRemainingSqft = currentSelectedStepObj ? getRemainingSqft(currentSelectedStepObj.id, selectedStepArea) : 0;
 
   // Productivity capacity calculations
   const stepName = currentSelectedStepObj?.name;
@@ -2090,19 +2111,23 @@ function DailyTargetAllocatorModal({
               {steps.map((s) => {
                 const isComp = s.status === 'COMPLETED';
                 const isProg = s.status === 'IN_PROGRESS' || s.status === 'PENDING_INSPECTION';
+                const stepAreaVal = s.stepSqft ?? selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0;
+                const remaining = getRemainingSqft(s.id, stepAreaVal);
                 const statusBadge = isComp
                   ? ' — [✓ ALREADY COMPLETED]'
                   : isProg
                   ? ' — [⏳ IN PROGRESS]'
-                  : '';
+                  : remaining <= 0
+                  ? ' — [FULLY ASSIGNED]'
+                  : ` (${remaining} SqFt Remaining)`;
                 return (
                   <option 
                     key={s.id} 
                     value={s.id}
-                    disabled={isComp}
+                    disabled={isComp || (!isProg && remaining <= 0)}
                     className={isComp ? 'font-bold text-slate-400 bg-slate-800' : isProg ? 'text-amber-400' : ''}
                   >
-                    {s.stepNumber}. {s.name} ({s.stepSqft ?? selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0} sqft){statusBadge}
+                    {s.stepNumber}. {s.name} ({stepAreaVal} sqft){statusBadge}
                   </option>
                 );
               })}
@@ -2119,19 +2144,25 @@ function DailyTargetAllocatorModal({
               type="number"
               value={targetSqft === 0 ? '' : targetSqft}
               onChange={(e) => {
-                const sqft = parseInt(e.target.value) || 0;
+                const sqft = Math.min(parseInt(e.target.value) || 0, selectedRemainingSqft);
                 setTargetSqft(sqft);
-                // Auto-update hours recommendation when sqft changes
-                if (sqft > 0) {
+                // Only auto-update hours recommendation when sqft changes AND user hasn't manually set duration
+                if (sqft > 0 && !userTouchedDuration) {
                   const estHrs = estimateHours(stepName, sqft);
                   setTargetHours(Math.floor(estHrs));
                   setTargetMinutes(Math.round((estHrs - Math.floor(estHrs)) * 60 / 15) * 15);
                 }
               }}
               min={0}
-              placeholder="e.g. 500"
+              max={selectedRemainingSqft}
+              placeholder={`Max ${selectedRemainingSqft} sqft`}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             />
+            {selectedStep && selectedRemainingSqft > 0 && (
+              <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                {selectedRemainingSqft} SqFt remaining (of {selectedStepArea} total) — already assigned: {selectedStepArea - selectedRemainingSqft} SqFt
+              </p>
+            )}
             {/* Allocated Target Hours (editable override) */}
             {selectedStep && targetSqft > 0 && (
               <div className="mt-3">
@@ -2145,7 +2176,7 @@ function DailyTargetAllocatorModal({
                     <span className="mb-1 block text-[10px] font-medium text-slate-400">Hours</span>
                     <select
                       value={targetHours}
-                      onChange={(e) => setTargetHours(parseInt(e.target.value) || 0)}
+                      onChange={(e) => { setTargetHours(parseInt(e.target.value) || 0); setUserTouchedDuration(true); }}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                     >
                       {Array.from({ length: 9 }, (_, i) => (
@@ -2157,7 +2188,7 @@ function DailyTargetAllocatorModal({
                     <span className="mb-1 block text-[10px] font-medium text-slate-400">Minutes</span>
                     <select
                       value={targetMinutes}
-                      onChange={(e) => setTargetMinutes(parseInt(e.target.value) || 0)}
+                      onChange={(e) => { setTargetMinutes(parseInt(e.target.value) || 0); setUserTouchedDuration(true); }}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-brand-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                     >
                       {[0, 15, 30, 45].map((m) => (

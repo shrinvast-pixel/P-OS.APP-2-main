@@ -198,6 +198,7 @@ export function PainterPortal({
   const [reportedBlockers, setReportedBlockers] = useState<{ stepId: string; reason: string; at: number }[]>([]);
   const [showMaterialShortage, setShowMaterialShortage] = useState(false);
   const [showQuickPhoto, setShowQuickPhoto] = useState(false);
+  const [showComplianceCheck, setShowComplianceCheck] = useState(false);
   const [, setTick] = useState(0);
 
   const clockState: ClockState = painter.clockState ?? 'CLOCKED_OUT';
@@ -235,10 +236,17 @@ export function PainterPortal({
   }, [project.materialBillOfQuantities, project.materials]);
 
   const handlePunchIn = () => {
+    setShowComplianceCheck(true);
+  };
+
+  const handleComplianceComplete = (complianceData: { photoUrl: string; violations: string[]; allChecked: boolean }) => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        () => {
           onClockChange(painter.id, 'CLOCKED_IN');
+          if (!complianceData.allChecked) {
+            onTaskStatusChange('', '', 'compliance-' + painter.id, 0, 'IN_PROGRESS' as any, undefined, undefined, `COMPLIANCE VIOLATION: ${complianceData.violations.join(', ')}`);
+          }
         },
         () => onClockChange(painter.id, 'CLOCKED_IN'),
         { enableHighAccuracy: true, timeout: 8000 },
@@ -246,6 +254,7 @@ export function PainterPortal({
     } else {
       onClockChange(painter.id, 'CLOCKED_IN');
     }
+    setShowComplianceCheck(false);
   };
 
   const handleBreak = () => {
@@ -276,7 +285,8 @@ export function PainterPortal({
               roomName: room.name,
               roomInteriorSqft: isExteriorRoom ? (room.exteriorSqft ?? room.totalSqft ?? room.interiorSqft) : (room.interiorSqft ?? room.totalSqft),
               step,
-              targetSqft: target?.targetSqft
+              targetSqft: target?.targetSqft,
+              targetHours: target?.targetHours
             });
           }
         }
