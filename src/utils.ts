@@ -123,7 +123,7 @@ export interface SlotDistribution<T> {
 }
 
 export function distributeTasksIntoSlots<
-  T extends { step: FinishingStep; targetSqft?: number; roomInteriorSqft?: number }
+  T extends { step: FinishingStep; targetSqft?: number; roomInteriorSqft?: number; targetHours?: number }
 >(tasks: T[]): SlotDistribution<T>[] {
   if (tasks.length === 0) return [];
   const slot1: T[] = [];
@@ -133,7 +133,7 @@ export function distributeTasksIntoSlots<
 
   for (const t of tasks) {
     const sqft = t.targetSqft ?? t.step.stepSqft ?? t.roomInteriorSqft ?? 0;
-    const hours = estimateHours(t.step.name, sqft);
+    const hours = t.targetHours ?? estimateHours(t.step.name, sqft);
     if (slot1Hours + hours <= PAINTER_SLOT_HOURS) {
       slot1.push(t);
       slot1Hours += hours;
@@ -145,10 +145,10 @@ export function distributeTasksIntoSlots<
 
   const slots: SlotDistribution<T>[] = [];
   if (slot1.length > 0) {
-    slots.push({ slotId: 1, time: '09:00 AM - 01:00 PM', tasks: slot1, hoursUsed: Math.round(slot1Hours * 10) / 10, hoursRemaining: Math.round((PAINTER_SLOT_HOURS - slot1Hours) * 10) / 10 });
+    slots.push({ slotId: 1, time: '09:00 AM - 01:00 PM', tasks: slot1, hoursUsed: Math.round(slot1Hours * 10) / 10, hoursRemaining: Math.max(0, Math.round((PAINTER_SLOT_HOURS - slot1Hours) * 10) / 10) });
   }
   if (slot2.length > 0) {
-    slots.push({ slotId: 2, time: '01:30 PM - 04:30 PM', tasks: slot2, hoursUsed: Math.round(slot2Hours * 10) / 10, hoursRemaining: Math.round((PAINTER_SLOT_HOURS - slot2Hours) * 10) / 10 });
+    slots.push({ slotId: 2, time: '01:30 PM - 04:30 PM', tasks: slot2, hoursUsed: Math.round(slot2Hours * 10) / 10, hoursRemaining: Math.max(0, Math.round((PAINTER_SLOT_HOURS - slot2Hours) * 10) / 10) });
   }
   return slots;
 }

@@ -1893,6 +1893,14 @@ function DailyTargetAllocatorModal({
     return Math.max(0, stepArea - assignedSum);
   };
 
+  const getAssignedPainterNames = (stepId: string): string => {
+    const today = new Date().toISOString().slice(0, 10);
+    const targets = (project.dailyTargets ?? []).filter(t => t.stepId === stepId && t.date === today);
+    if (targets.length === 0) return '';
+    const names = targets.map(t => painters.find(p => p.id === t.painterId)?.name).filter(Boolean);
+    return names.length > 0 ? names.join(', ') : '';
+  };
+
   const handleStepChange = (stepId: string) => {
     setSelectedStep(stepId);
     setUserTouchedDuration(false);
@@ -2113,12 +2121,16 @@ function DailyTargetAllocatorModal({
                 const isProg = s.status === 'IN_PROGRESS' || s.status === 'PENDING_INSPECTION';
                 const stepAreaVal = s.stepSqft ?? selectedRoomObj?.totalSqft ?? selectedRoomObj?.netWallSqft ?? selectedRoomObj?.interiorSqft ?? selectedRoomObj?.exteriorSqft ?? selectedRoomObj?.sqft ?? 0;
                 const remaining = getRemainingSqft(s.id, stepAreaVal);
+                const assignedSqft = stepAreaVal - remaining;
+                const painterNames = getAssignedPainterNames(s.id);
                 const statusBadge = isComp
                   ? ' — [✓ ALREADY COMPLETED]'
                   : isProg
                   ? ' — [⏳ IN PROGRESS]'
                   : remaining <= 0
-                  ? ' — [FULLY ASSIGNED]'
+                  ? ` — [FULLY ASSIGNED to ${painterNames || 'painters'}]`
+                  : assignedSqft > 0
+                  ? ` (${remaining} SqFt remaining | ${assignedSqft} SqFt assigned to ${painterNames})`
                   : ` (${remaining} SqFt Remaining)`;
                 return (
                   <option 

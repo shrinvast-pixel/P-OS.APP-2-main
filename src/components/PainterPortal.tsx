@@ -270,7 +270,7 @@ export function PainterPortal({
   };
 
   const assignedTasks = useMemo(() => {
-    const result: { floorId: string; floorName: string; roomId: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number }[] = [];
+    const result: { floorId: string; floorName: string; roomId: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number; targetHours?: number }[] = [];
     for (const floor of project.floors ?? []) {
       const exteriorZone = floor.isExterior || floor.id === 'floor-exterior';
       for (const room of floor.rooms ?? []) {
@@ -379,11 +379,11 @@ export function PainterPortal({
               </div>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {clockState === 'CLOCKED_OUT' ? (
                 <button 
                   onClick={handlePunchIn} 
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-8 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-8 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 min-h-[48px]"
                 >
                   <LogIn size={18} />
                   Start Shift
@@ -392,14 +392,14 @@ export function PainterPortal({
                 <>
                   <button 
                     onClick={clockState === 'ON_BREAK' ? handleResumeFromBreak : handleBreak} 
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg active:scale-95 ${clockState === 'ON_BREAK' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-amber-500 shadow-amber-500/20'}`}
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg active:scale-95 min-h-[48px] ${clockState === 'ON_BREAK' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-amber-500 shadow-amber-500/20'}`}
                   >
                     {clockState === 'ON_BREAK' ? <Play size={18} /> : <Coffee size={18} />}
                     {clockState === 'ON_BREAK' ? 'Resume' : 'Break'}
                   </button>
                   <button 
                     onClick={handlePunchOut} 
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-[#334155] px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-[#475569] transition-all shadow-lg active:scale-95"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-[#334155] px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-[#475569] transition-all shadow-lg active:scale-95 min-h-[48px]"
                   >
                     <LogOut size={18} />
                     End Shift
@@ -620,6 +620,14 @@ export function PainterPortal({
           }}
         />
       )}
+
+      {showComplianceCheck && (
+        <ComplianceCheckModal
+          painterName={painter.name}
+          onClose={() => setShowComplianceCheck(false)}
+          onComplete={handleComplianceComplete}
+        />
+      )}
     </div>
   );
 }
@@ -634,7 +642,7 @@ function ShiftTaskCard({
   onQuickSubmit,
   onReportBlocker,
 }: {
-  task: { floorName: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number };
+  task: { floorName: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number; targetHours?: number };
   isActive: boolean;
   reportedBlockers: { stepId: string; reason: string; at: number }[];
   onStart: () => void;
@@ -660,6 +668,10 @@ function ShiftTaskCard({
   const dynamicSteps = getCoatSteps(task.step.name, task.step.surface);
   const sop = getSopGuideline(task.step.name, task.step.surface);
 
+  const allocatedHours = task.targetHours ?? estimateHours(task.step.name, task.targetSqft || task.step.stepSqft || task.roomInteriorSqft || 0);
+  const estH = Math.floor(allocatedHours);
+  const estM = Math.round((allocatedHours - estH) * 60);
+
   return (
     <div className={`group relative overflow-hidden rounded-2xl border transition-all ${isActive ? 'border-brand-500 bg-[#1E293B] ring-1 ring-brand-500/20 shadow-md' : 'border-[#334155] bg-[#1E293B] hover:border-[#475569]'}`}>
       {isActive && <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-brand-500" />}
@@ -681,10 +693,10 @@ function ShiftTaskCard({
                 <Target size={12} />
                 {task.targetSqft || 0} SqFt
               </span>
-              {(() => { const hrs = estimateHours(task.step.name, task.targetSqft || task.step.stepSqft || task.roomInteriorSqft || 0); return hrs > 0 ? (
+              {(() => { return allocatedHours > 0 ? (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-[#00E676] px-2.5 py-1.5 text-xs font-black text-slate-900 shadow-md shadow-emerald-500/20">
                   <Clock size={12} />
-                  Est: {hrs}h
+                  Est: {estH}h{estM > 0 ? ` ${estM}m` : ''}
                 </span>
               ) : null; })()}
             </div>
@@ -710,8 +722,7 @@ function ShiftTaskCard({
         {/* Live Countdown Timer for IN_PROGRESS tasks */}
         {isActive && task.step.startedAt && (() => {
           const elapsedMin = Math.floor((Date.now() - task.step.startedAt) / 60000);
-          const targetSqftVal = task.targetSqft || task.step.stepSqft || task.roomInteriorSqft || 0;
-          const allocatedMin = Math.round(estimateHours(task.step.name, targetSqftVal) * 60);
+          const allocatedMin = Math.round(allocatedHours * 60);
           const remainingMin = Math.max(0, allocatedMin - elapsedMin);
           const isOvertime = elapsedMin > allocatedMin;
           return (
@@ -817,7 +828,7 @@ function ShiftTaskCard({
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); onReportBlocker(); }}
-                className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 px-3 py-4 text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all active:scale-[0.98]"
+                className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-red-500/40 bg-red-500/10 px-3 py-4 text-[10px] font-black uppercase tracking-wider text-red-400 hover:bg-red-500/20 transition-all active:scale-[0.98] min-h-[56px]"
               >
                 <Flag size={14} />
                 Blocker
@@ -2082,6 +2093,142 @@ function QuickPhotoLogModal({
             className="w-full py-4 rounded-2xl bg-brand-500 text-white text-sm font-bold uppercase tracking-widest shadow-lg shadow-brand-500/20 hover:bg-brand-600 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none transition-all"
           >
             Save Surface Photo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComplianceCheckModal({
+  painterName,
+  onClose,
+  onComplete,
+}: {
+  painterName: string;
+  onClose: () => void;
+  onComplete: (data: { photoUrl: string; violations: string[]; allChecked: boolean }) => void;
+}) {
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [checks, setChecks] = useState({
+    dressCode: false,
+    safetyCap: false,
+    mask: false,
+    idBadge: false,
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const allChecked = checks.dressCode && checks.safetyCap && checks.mask && checks.idBadge;
+  const canSubmit = allChecked && Boolean(photoUrl);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const raw = reader.result as string;
+      const compressed = await compressImageBase64(raw, 600, 600, 0.6);
+      setPhotoUrl(compressed);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = () => {
+    if (!photoUrl) return;
+    const violations: string[] = [];
+    if (!checks.dressCode) violations.push('Uniform/Dress Code');
+    if (!checks.safetyCap) violations.push('Safety Cap');
+    if (!checks.mask) violations.push('Protective Mask');
+    if (!checks.idBadge) violations.push('Employee ID Badge');
+    onComplete({ photoUrl, violations, allChecked });
+  };
+
+  const toggle = (key: keyof typeof checks) => setChecks(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const checklistItems: { key: keyof typeof checks; label: string }[] = [
+    { key: 'dressCode', label: 'Proper Dress Code / Uniform' },
+    { key: 'safetyCap', label: 'Safety Cap' },
+    { key: 'mask', label: 'Protective Mask' },
+    { key: 'idBadge', label: 'Employee ID Badge Visible' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative w-full max-w-sm rounded-3xl bg-[#1E293B] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="bg-[#0F172A] px-5 py-4 text-white border-b border-[#334155]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-white shadow-lg shadow-brand-500/20">
+                <Camera size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold">Compliance & Uniform Check</h3>
+                <p className="text-[10px] text-[#A0AEC0] uppercase font-bold tracking-wider">{painterName}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-[#A0AEC0] hover:bg-[#334155]">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-5">
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[#A0AEC0]">Step 1: Selfie Photo</label>
+            <input ref={fileInputRef} type="file" accept="image/*" capture="user" onChange={handleFileSelect} className="hidden" />
+            {photoUrl ? (
+              <div className="relative aspect-square overflow-hidden rounded-2xl border border-[#334155]">
+                <img src={photoUrl} alt="Selfie" className="h-full w-full object-cover" />
+                <button
+                  onClick={() => setPhotoUrl('')}
+                  className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-white hover:bg-black"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#334155] bg-[#0F172A] py-12 text-[#A0AEC0] hover:bg-[#1E293B] transition-colors"
+              >
+                <Camera size={40} />
+                <span className="text-xs font-bold uppercase tracking-wider">Take Selfie Photo</span>
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-[#A0AEC0]">Step 2: Uniform Checklist</label>
+            <div className="space-y-2">
+              {checklistItems.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => toggle(key)}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all ${checks[key] ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-[#334155] bg-[#0F172A] hover:border-[#475569]'}`}
+                >
+                  <div className={`h-6 w-6 rounded-md grid place-items-center transition-all ${checks[key] ? 'bg-emerald-500' : 'bg-[#334155]'}`}>
+                    {checks[key] && <CheckCircle2 size={16} className="text-white" />}
+                  </div>
+                  <span className={`text-sm font-bold ${checks[key] ? 'text-white' : 'text-[#A0AEC0]'}`}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[#334155] p-5 bg-[#0F172A]">
+          {!allChecked && photoUrl && (
+            <p className="mb-3 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+              Warning: Missing items will be logged as compliance violation
+            </p>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="w-full py-4 rounded-2xl bg-emerald-500 text-white text-sm font-bold uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none transition-all"
+          >
+            Confirm & Start Shift
           </button>
         </div>
       </div>
