@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MapPin, CalendarDays, Ruler, Clock, ChevronDown, Shield, CircleUser as UserCircle2, Brush, Building2, Wallet, Check, Upload, X, TriangleAlert as AlertTriangle } from 'lucide-react';
+import { MapPin, CalendarDays, Ruler, Clock, ChevronDown, Shield, CircleUser as UserCircle2, Brush, Building2, Wallet, Check, Upload, X, TriangleAlert as AlertTriangle, Trash2 } from 'lucide-react';
 import type { PaintProject, Supervisor, Painter } from '@/types';
 import { fmtNum, fmtINR, computeMetrics } from '@/utils';
 import { parseJoplinProJson } from '@/utils/jsonParser';
@@ -18,6 +18,7 @@ interface TopBarProps {
   onSupervisorChange: (id: string) => void;
   onPainterChange: (id: string) => void;
   onImportProject?: (project: PaintProject) => void;
+  onDeleteProject?: (id: string) => void;
 }
 
 export function TopBar({
@@ -32,6 +33,7 @@ export function TopBar({
   onSupervisorChange,
   onPainterChange,
   onImportProject,
+  onDeleteProject,
 }: TopBarProps) {
   const [projMenuOpen, setProjMenuOpen] = useState(false);
   const [supMenuOpen, setSupMenuOpen] = useState(false);
@@ -91,29 +93,45 @@ export function TopBar({
                 <ChevronDown size={13} className="text-slate-400" />
               </button>
               {projMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                <div className="absolute right-0 top-full mt-1 max-h-[60vh] w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
                   {projects.map((p) => (
-                    <button
+                    <div
                       key={p.id}
-                      onClick={() => {
-                        onProjectChange(p.id);
-                        setProjMenuOpen(false);
-                      }}
                       className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
                         p.id === activeProjectId
                           ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
                           : 'text-slate-600 dark:text-slate-300'
                       }`}
                     >
-                      <Building2 size={14} className="shrink-0 text-slate-400" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{p.projectDetails.name}</p>
-                        <p className="truncate text-[10px] text-slate-400">
-                          {p.customerDetails.address ?? '—'}
-                        </p>
-                      </div>
-                      {p.id === activeProjectId && <Check size={14} className="shrink-0 text-brand-500" />}
-                    </button>
+                      <button
+                        onClick={() => {
+                          onProjectChange(p.id);
+                          setProjMenuOpen(false);
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <Building2 size={14} className="shrink-0 text-slate-400" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{p.projectDetails.name}</p>
+                          <p className="truncate text-[10px] text-slate-400">
+                            {p.customerDetails.address ?? '—'}
+                          </p>
+                        </div>
+                        {p.id === activeProjectId && <Check size={14} className="shrink-0 text-brand-500" />}
+                      </button>
+                      {onDeleteProject && (
+                        <button
+                          type="button"
+                          aria-label={`Delete ${p.projectDetails.name}`}
+                          onClick={() => {
+                            if (window.confirm('Delete project?')) onDeleteProject(p.id);
+                          }}
+                          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

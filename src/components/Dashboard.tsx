@@ -927,6 +927,14 @@ export function Dashboard({ projects, onProjectsChange }: DashboardProps) {
     }));
   };
 
+  const handleDeleteProject = (projectId: string) => {
+    const remainingProjects = projects.filter((p) => p.id !== projectId);
+    onProjectsChange(remainingProjects);
+    if (projectId === activeProjectId) {
+      setActiveProjectId(remainingProjects[0]?.id ?? '');
+    }
+  };
+
   const handleImportProject = (imported: PaintProject) => {
     const newProject: PaintProject = ensureExteriorFloor({
       ...imported,
@@ -962,6 +970,7 @@ export function Dashboard({ projects, onProjectsChange }: DashboardProps) {
         onSupervisorChange={setActiveSupervisorId}
         onPainterChange={setActivePainterId}
         onImportProject={handleImportProject}
+        onDeleteProject={handleDeleteProject}
       />
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {role === 'admin' && (
