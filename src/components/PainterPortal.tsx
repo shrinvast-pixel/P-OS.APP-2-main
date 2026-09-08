@@ -17,6 +17,10 @@ interface PainterPortalProps {
     areaCompleted?: number,
     pauseReason?: string
   ) => void;
+  onTaskSwitch: (
+    pauseTarget: { floorId: string; roomId: string; stepId: string; progressPct: number },
+    startTarget: { floorId: string; roomId: string; stepId: string }
+  ) => void;
   onPhotoUpload: (floorId: string, roomId: string, stepId: string, type: 'before' | 'after', url: string) => void;
   onClockChange: (painterId: string, state: ClockState) => void;
 }
@@ -170,6 +174,7 @@ export function PainterPortal({
   project,
   painter,
   onTaskStatusChange,
+  onTaskSwitch,
   onPhotoUpload,
   onClockChange,
 }: PainterPortalProps) {
@@ -359,9 +364,18 @@ export function PainterPortal({
 
   const handleSelectTask = (t: typeof assignedTasks[0]) => {
     if (activeTask && activeTask.step.id !== t.step.id) {
-      onTaskStatusChange(activeTask.floorId, activeTask.roomId, activeTask.step.id, activeTask.step.progressPct ?? 10, 'PAUSED');
+      onTaskSwitch(
+        {
+          floorId: activeTask.floorId,
+          roomId: activeTask.roomId,
+          stepId: activeTask.step.id,
+          progressPct: activeTask.step.progressPct ?? 10,
+        },
+        { floorId: t.floorId, roomId: t.roomId, stepId: t.step.id }
+      );
+    } else {
+      onTaskStatusChange(t.floorId, t.roomId, t.step.id, 10, 'IN_PROGRESS');
     }
-    onTaskStatusChange(t.floorId, t.roomId, t.step.id, 10, 'IN_PROGRESS');
   };
 
   const siteLocation = project.customerDetails?.address || project.projectDetails?.name || SITE_LABEL;
@@ -810,11 +824,11 @@ function ShiftTaskCard({
         </div>
 
         {/* Live Countdown Timer for IN_PROGRESS tasks */}
-        {isActive && task.step.startedAt && (() => {
+        {isActive && task.step.startedAt && allocatedHours > 0 && (() => {
           const elapsedMin = Math.floor((Date.now() - task.step.startedAt) / 60000);
           const allocatedMin = Math.round(allocatedHours * 60);
           const remainingMin = Math.max(0, allocatedMin - elapsedMin);
-          const isOvertime = elapsedMin > allocatedMin;
+          const isOvertime = allocatedMin > 0 && elapsedMin > allocatedMin;
           return (
             <div className={`mb-4 flex items-center justify-between rounded-xl px-4 py-3 text-sm font-black ${isOvertime ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-900 text-white'}`}>
               <div className="flex items-center gap-2">

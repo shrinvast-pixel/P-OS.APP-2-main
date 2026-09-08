@@ -725,7 +725,7 @@ export function Dashboard({ projects, onProjectsChange }: DashboardProps) {
           if (p.clockState === 'ON_BREAK' && p.breakStartAt) {
             return { ...p, clockState: state, totalBreakMs: totalBreak + (now - p.breakStartAt), breakStartAt: undefined, checkedIn: true };
           }
-          return { ...p, clockState: state, clockInAt: now, clockOutAt: undefined, breakStartAt: undefined, gpsVerified: true, siteLabel: 'Koramangala Site', checkedIn: true };
+          return { ...p, clockState: state, clockInAt: now, clockOutAt: undefined, breakStartAt: undefined, gpsVerified: true, siteLabel: prev.customerDetails?.address ?? prev.projectDetails?.name ?? 'Site', checkedIn: true };
         }
         if (state === 'ON_BREAK') {
           return { ...p, clockState: state, breakStartAt: now };
