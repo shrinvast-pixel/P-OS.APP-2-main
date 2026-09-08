@@ -143,7 +143,7 @@ function getMaterialUnit(name: string): string {
   return 'L'; // Default to L
 }
 
-const SITE_LABEL = 'Koramangala Site';
+const SITE_LABEL = 'Jobsite';
 const SITE_LAT = 12.9352;
 const SITE_LNG = 77.6245;
 const GPS_TOLERANCE_KM = 0.5;
@@ -357,6 +357,15 @@ export function PainterPortal({
     onTaskStatusChange(t.floorId, t.roomId, t.step.id, 50, 'IN_PROGRESS');
   };
 
+  const handleSelectTask = (t: typeof assignedTasks[0]) => {
+    if (activeTask && activeTask.step.id !== t.step.id) {
+      onTaskStatusChange(activeTask.floorId, activeTask.roomId, activeTask.step.id, activeTask.step.progressPct ?? 10, 'PAUSED');
+    }
+    onTaskStatusChange(t.floorId, t.roomId, t.step.id, 10, 'IN_PROGRESS');
+  };
+
+  const siteLocation = project.customerDetails?.address || project.projectDetails?.name || SITE_LABEL;
+
   return (
     <div className="mx-auto w-full max-w-[480px] space-y-4 animate-fade-in pb-24 min-h-screen bg-[#0F172A]">
       {/* 1. Header with Live Date & Shift Status */}
@@ -380,49 +389,45 @@ export function PainterPortal({
             </div>
           </div>
           
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl bg-[#1E293B] p-4 border border-[#334155]">
-            <div className="flex items-center gap-3">
-              <div className={`h-12 w-12 rounded-2xl grid place-items-center transition-all ${clockState !== 'CLOCKED_OUT' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-[#334155]'}`}>
-                {clockState !== 'CLOCKED_OUT' ? <Timer size={24} className="animate-pulse text-white" /> : <LogOut size={24} className="text-[#A0AEC0]" />}
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#A0AEC0]">Shift Status: <span className={clockState !== 'CLOCKED_OUT' ? 'text-[#00E676]' : 'text-[#A0AEC0]'}>{clockState.replace('_', ' ')}</span></p>
-                <p className="font-mono text-3xl font-black tracking-tighter text-white">
-                  {clockState === 'CLOCKED_OUT' ? '--:--:--' : fmtDuration(cappedElapsedMs)}
-                </p>
-                {shiftExceeded && (
-                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-red-300 ring-1 ring-red-500/40 animate-pulse">
-                    <ShieldAlert size={11} />
-                    Shift &gt; 12h — Punch Out!
-                  </div>
-                )}
-              </div>
+          <div className="flex items-center gap-3 rounded-2xl bg-[#1E293B] p-3 border border-[#334155]">
+            <div className={`h-10 w-10 rounded-xl grid place-items-center transition-all shrink-0 ${clockState !== 'CLOCKED_OUT' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-[#334155]'}`}>
+              {clockState !== 'CLOCKED_OUT' ? <Timer size={20} className="animate-pulse text-white" /> : <LogOut size={20} className="text-[#A0AEC0]" />}
             </div>
-            
-            <div className="flex flex-wrap gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-black uppercase tracking-widest text-[#A0AEC0]">Shift: <span className={clockState !== 'CLOCKED_OUT' ? 'text-[#00E676]' : 'text-[#A0AEC0]'}>{clockState.replace('_', ' ')}</span></p>
+              <p className="font-mono text-2xl font-black tracking-tighter text-white leading-tight">
+                {clockState === 'CLOCKED_OUT' ? '--:--:--' : fmtDuration(cappedElapsedMs)}
+              </p>
+              {shiftExceeded && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-red-300 ring-1 ring-red-500/40 animate-pulse">
+                  <ShieldAlert size={9} /> 12h+
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1.5 shrink-0">
               {clockState === 'CLOCKED_OUT' ? (
                 <button 
                   onClick={handlePunchIn} 
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-8 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 min-h-[48px]"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 min-h-[44px]"
                 >
-                  <LogIn size={18} />
-                  Start Shift
+                  <LogIn size={16} />
+                  Start
                 </button>
               ) : (
                 <>
                   <button 
                     onClick={clockState === 'ON_BREAK' ? handleResumeFromBreak : handleBreak} 
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg active:scale-95 min-h-[48px] ${clockState === 'ON_BREAK' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-amber-500 shadow-amber-500/20'}`}
+                    className={`flex items-center justify-center gap-1 rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-lg active:scale-95 min-h-[44px] ${clockState === 'ON_BREAK' ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-amber-500 shadow-amber-500/20'}`}
                   >
-                    {clockState === 'ON_BREAK' ? <Play size={18} /> : <Coffee size={18} />}
+                    {clockState === 'ON_BREAK' ? <Play size={14} /> : <Coffee size={14} />}
                     {clockState === 'ON_BREAK' ? 'Resume' : 'Break'}
                   </button>
                   <button 
                     onClick={handlePunchOut} 
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-[#334155] px-6 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:bg-[#475569] transition-all shadow-lg active:scale-95 min-h-[48px]"
+                    className="flex items-center justify-center gap-1 rounded-xl bg-[#334155] px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#475569] transition-all shadow-lg active:scale-95 min-h-[44px]"
                   >
-                    <LogOut size={18} />
-                    End Shift
+                    <LogOut size={14} />
+                    End
                   </button>
                 </>
               )}
@@ -433,7 +438,7 @@ export function PainterPortal({
         {clockState !== 'CLOCKED_OUT' && (
           <div className={`flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-widest ${gpsVerified ? 'bg-emerald-500/10 text-[#00E676]' : 'bg-amber-500/10 text-amber-400'}`}>
             <MapPin size={12} />
-            {gpsVerified ? `GPS LOCKED: ${painter.siteLabel || 'KORAMANGALA SITE'}` : 'GPS VERIFYING...'}
+            {gpsVerified ? `GPS LOCKED: ${painter.siteLabel || siteLocation}` : 'GPS VERIFYING...'}
           </div>
         )}
       </div>
@@ -480,9 +485,10 @@ export function PainterPortal({
                 const estH = Math.floor(hrs);
                 const estM = Math.round((hrs - estH) * 60);
                 return (
-                  <div
+                  <button
                     key={t.step.id}
-                    className="flex items-center justify-between rounded-2xl border border-[#334155] bg-[#1E293B] px-4 py-3 transition-all hover:border-[#475569]"
+                    onClick={() => handleSelectTask(t)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-[#334155] bg-[#1E293B] px-4 py-3 transition-all hover:border-brand-500/50 hover:bg-[#334155] active:scale-[0.98] text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className={`h-8 w-8 rounded-lg grid place-items-center shrink-0 ${stepIconClass(t.step.name)}`}>
@@ -498,8 +504,9 @@ export function PainterPortal({
                         <Clock size={10} />
                         {estH}h{estM > 0 ? ` ${estM}m` : ''}
                       </span>
+                      <Play size={12} className="text-brand-400" />
                     </div>
-                  </div>
+                  </button>
                 );
               })}
           </div>

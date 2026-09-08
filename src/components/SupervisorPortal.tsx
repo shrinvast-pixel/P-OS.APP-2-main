@@ -909,6 +909,15 @@ export function SupervisorPortal({
 
               {/* Room & Tasks Area */}
               <div className="lg:col-span-3 p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black uppercase tracking-widest text-zinc-100">Floors & Rooms</h4>
+                  <button
+                    onClick={() => setShowTargetAllocator(true)}
+                    className="flex items-center gap-1.5 rounded-xl bg-brand-500 px-3.5 py-2 text-xs font-black text-white hover:bg-brand-600 shadow-md transition-all active:scale-95"
+                  >
+                    <Target size={14} /> Allocate Daily Targets
+                  </button>
+                </div>
                 {(project.floors ?? [])
                   .filter(f => openFloors.has(f.id))
                   .map(floor => (
