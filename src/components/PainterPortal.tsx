@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { CircleUser as UserCircle2, Layers, Brush, Play, Pause, CircleCheck as CheckCircle2, Ruler, Target, Camera, X, ClipboardCheck, LogIn, LogOut, Coffee, MapPin, Timer, ChevronRight, AlertTriangle, ShieldAlert, Flag, ChevronDown, BookOpen, Package, Clock, Zap } from 'lucide-react';
 import type { PaintProject, Painter, FinishingStep, TaskStatus, DailyTarget, ClockState, MaterialItem } from '@/types';
 import { ErrorBoundary } from './ErrorBoundary';
-import { todayISO, compressImageBase64, distributeTasksIntoSlots, estimateHours, getStepProductivity, maxDailySqft } from '@/utils';
+import { todayISO, compressImageBase64, estimateHours, getStepProductivity, maxDailySqft } from '@/utils';
 
 interface PainterPortalProps {
   project: PaintProject;
@@ -271,12 +271,17 @@ export function PainterPortal({
 
   const assignedTasks = useMemo(() => {
     const result: { floorId: string; floorName: string; roomId: string; roomName: string; roomInteriorSqft?: number; step: FinishingStep; targetSqft?: number; targetHours?: number }[] = [];
+    const today = todayISO();
+    const painterTargetStepIds = new Set(
+      (project.dailyTargets ?? []).filter(t => t.painterId === painter.id && t.date === today).map(t => t.stepId)
+    );
     for (const floor of project.floors ?? []) {
       const exteriorZone = floor.isExterior || floor.id === 'floor-exterior';
       for (const room of floor.rooms ?? []) {
         for (const step of room.finishingSteps ?? []) {
-          if (step.painterIds?.includes(painter.id)) {
-            const target = project.dailyTargets?.find(t => t.stepId === step.id && t.date === todayISO());
+          const isAssignedToPainter = step.painterIds?.includes(painter.id) || painterTargetStepIds.has(step.id);
+          if (isAssignedToPainter) {
+            const target = project.dailyTargets?.find(t => t.stepId === step.id && t.painterId === painter.id && t.date === today);
             const isExteriorRoom = exteriorZone || Boolean(room.isExterior);
             result.push({
               floorId: floor.id,
@@ -304,16 +309,31 @@ export function PainterPortal({
   const todayTasks = useMemo(() => {
     const today = todayISO();
     return assignedTasks.filter(t => {
-      const hasDailyTarget = project.dailyTargets?.some(tgt => tgt.stepId === t.step.id && tgt.date === today);
+      const hasDailyTarget = project.dailyTargets?.some(tgt => tgt.stepId === t.step.id && tgt.painterId === painter.id && tgt.date === today);
       const isScheduledToday = t.step.scheduledDate === today;
       return hasDailyTarget || isScheduledToday;
     });
-  }, [assignedTasks, project.dailyTargets]);
+  }, [assignedTasks, project.dailyTargets, painter.id]);
 
-  // Group today's tasks into slots based on cumulative estimated hours
-  const slots = useMemo(() => {
-    return distributeTasksIntoSlots(todayTasks);
+  // Categorize today's tasks into active, upcoming, and completed
+  const activeTask = useMemo(() => {
+    return todayTasks.find(t => t.step.status === 'IN_PROGRESS') ?? null;
   }, [todayTasks]);
+
+  const upNextTasks = useMemo(() => {
+    return todayTasks
+      .filter(t => t.step.status !== 'IN_PROGRESS' && t.step.status !== 'COMPLETED' && t.step.status !== 'PENDING_INSPECTION')
+      .sort((a, b) => (a.step.stepNumber ?? 0) - (b.step.stepNumber ?? 0));
+  }, [todayTasks]);
+
+  const completedTodayTasks = useMemo(() => {
+    return todayTasks.filter(t => t.step.status === 'COMPLETED' || t.step.status === 'PENDING_INSPECTION');
+  }, [todayTasks]);
+
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  // The primary task to show in the NOW card: active task, or first assigned task if none active
+  const nowTask = activeTask ?? upNextTasks[0] ?? null;
 
   const handleStartWork = (t: typeof assignedTasks[0]) => {
     onTaskStatusChange(t.floorId, t.roomId, t.step.id, 10, 'IN_PROGRESS');
@@ -418,56 +438,119 @@ export function PainterPortal({
         )}
       </div>
 
-      {/* 2. Time Slot Shift Timeline (Today's Schedule) */}
-      <div className="space-y-4 px-3">
+      {/* 2. NOW — Active Task Focus Card */}
+      <div className="space-y-3 px-3">
         <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-white">
-          <Timer size={16} className="text-[#00E676]" />
-          Today's Shift Agenda
+          <Zap size={16} className="text-[#00E676]" />
+          Now {activeTask ? '— Working' : nowTask ? '— Ready to Start' : ''}
         </h3>
 
-        {slots.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-[#334155] bg-[#1E293B] p-16 text-center">
-            <Layers size={48} className="mx-auto text-[#475569] mb-4" />
-            <p className="text-sm font-bold text-[#A0AEC0] uppercase tracking-widest">No tasks scheduled for today</p>
-          </div>
+        {nowTask ? (
+          <ShiftTaskCard
+            key={nowTask.step.id}
+            task={nowTask}
+            isActive={nowTask.step.status === 'IN_PROGRESS'}
+            reportedBlockers={reportedBlockers.filter(b => b.stepId === nowTask.step.id)}
+            onStart={() => handleStartWork(nowTask)}
+            onPause={() => handlePauseWork(nowTask)}
+            onSubmit={() => handleCompleteWork(nowTask)}
+            onQuickSubmit={() => handleQuickSubmit(nowTask)}
+            onReportBlocker={() => setBlockerTask({ floorId: nowTask.floorId, roomId: nowTask.roomId, step: nowTask.step })}
+          />
         ) : (
-          <div className="relative space-y-8 before:absolute before:left-4 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#334155]">
-            {slots.map((slot) => (
-              <div key={slot.slotId} className="relative pl-10">
-                <div className="absolute left-[13px] top-2 h-2.5 w-2.5 rounded-full border-2 border-[#0F172A] bg-brand-500 ring-4 ring-brand-500/10" />
-                <div className="mb-4">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#A0AEC0]">Slot {slot.slotId}: {slot.time}</span>
-                  <span className="ml-2 text-[9px] font-bold text-brand-400">{slot.hoursUsed}h used / {slot.hoursRemaining}h free</span>
-                </div>
-                <div className="space-y-4">
-                  {slot.tasks.map((t) => (
-                    <ShiftTaskCard
-                      key={t.step.id}
-                      task={t}
-                      isActive={t.step.status === 'IN_PROGRESS'}
-                      reportedBlockers={reportedBlockers.filter(b => b.stepId === t.step.id)}
-                      onStart={() => handleStartWork(t)}
-                      onPause={() => handlePauseWork(t)}
-                      onSubmit={() => handleCompleteWork(t)}
-                      onQuickSubmit={() => handleQuickSubmit(t)}
-                      onReportBlocker={() => setBlockerTask({ floorId: t.floorId, roomId: t.roomId, step: t.step })}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="rounded-3xl border border-dashed border-[#334155] bg-[#1E293B] p-12 text-center">
+            <Layers size={40} className="mx-auto text-[#475569] mb-3" />
+            <p className="text-sm font-bold text-[#A0AEC0] uppercase tracking-widest">No tasks assigned for today</p>
           </div>
         )}
       </div>
 
-      {/* 3. Yesterday's Backlog & Rework Section */}
-      {backlogTasks.length > 0 && (
-        <div className="space-y-4 px-3">
-          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-red-500">
-            <AlertTriangle size={16} />
-            Previous Logs & Pending Rework
+      {/* 3. UP NEXT — Compact Queue */}
+      {upNextTasks.length > 1 && (
+        <div className="space-y-3 px-3">
+          <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#A0AEC0]">
+            <ChevronRight size={14} className="text-brand-400" />
+            Up Next ({upNextTasks.length - (activeTask ? 0 : 1)} tasks)
           </h3>
-          <div className="grid gap-4">
+          <div className="space-y-2">
+            {upNextTasks
+              .filter(t => t.step.id !== nowTask?.step.id)
+              .map((t) => {
+                const hrs = t.targetHours ?? 0;
+                const estH = Math.floor(hrs);
+                const estM = Math.round((hrs - estH) * 60);
+                return (
+                  <div
+                    key={t.step.id}
+                    className="flex items-center justify-between rounded-2xl border border-[#334155] bg-[#1E293B] px-4 py-3 transition-all hover:border-[#475569]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className={`h-8 w-8 rounded-lg grid place-items-center shrink-0 ${stepIconClass(t.step.name)}`}>
+                        <Brush size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{t.step.name}</p>
+                        <p className="text-[10px] text-[#A0AEC0] uppercase font-bold tracking-wider truncate">{t.roomName} · {t.targetSqft || 0} SqFt</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-[#0F172A] px-2 py-1 text-[10px] font-bold text-[#00E676]">
+                        <Clock size={10} />
+                        {estH}h{estM > 0 ? ` ${estM}m` : ''}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Completed Today — Collapsed Accordion */}
+      {completedTodayTasks.length > 0 && (
+        <div className="space-y-2 px-3">
+          <button
+            onClick={() => setShowCompleted(prev => !prev)}
+            className="flex w-full items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 transition-all hover:bg-emerald-500/10"
+          >
+            <span className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#00E676]">
+              <CheckCircle2 size={14} />
+              Completed Today ({completedTodayTasks.length})
+            </span>
+            <ChevronDown size={16} className={`text-[#00E676] transition-transform ${showCompleted ? 'rotate-180' : ''}`} />
+          </button>
+          {showCompleted && (
+            <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              {completedTodayTasks.map((t) => (
+                <div
+                  key={t.step.id}
+                  className="flex items-center justify-between rounded-xl border border-[#334155] bg-[#1E293B] px-4 py-2.5 opacity-70"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <CheckCircle2 size={16} className="text-[#00E676] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">{t.step.name}</p>
+                      <p className="text-[10px] text-[#A0AEC0] uppercase font-bold tracking-wider truncate">{t.roomName} · {t.targetSqft || 0} SqFt</p>
+                    </div>
+                  </div>
+                  <span className={`text-[9px] font-black uppercase tracking-wider shrink-0 ml-2 ${t.step.status === 'COMPLETED' ? 'text-[#00E676]' : 'text-amber-400'}`}>
+                    {t.step.status === 'COMPLETED' ? 'Done' : 'QA'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Backlog & Rework */}
+      {backlogTasks.length > 0 && (
+        <div className="space-y-3 px-3">
+          <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-500">
+            <AlertTriangle size={14} />
+            Rework Queue
+          </h3>
+          <div className="grid gap-3">
             {backlogTasks.map((t) => (
               <BacklogTaskCard
                 key={t.step.id}
