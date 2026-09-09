@@ -1995,7 +1995,7 @@ function DailyTargetAllocatorModal({
   const selectedFloorObj = floors.find((f) => f.id === selectedFloor);
   const rooms = selectedFloorObj?.rooms ?? [];
   const selectedRoomObj = rooms.find((r) => r.id === selectedRoom);
-  const steps = selectedRoomObj?.finishingSteps ?? [];
+  const steps = (selectedRoomObj?.finishingSteps ?? selectedRoomObj?.['steps' as keyof typeof selectedRoomObj] ?? []) as FinishingStep[];
 
   // Calculate remaining SqFt for a step: total step SqFt minus already-assigned across all painters
   const getRemainingSqft = (stepId: string, stepArea: number): number => {
