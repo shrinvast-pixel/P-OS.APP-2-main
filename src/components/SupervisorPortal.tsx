@@ -911,12 +911,7 @@ export function SupervisorPortal({
               <div className="lg:col-span-3 p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-black uppercase tracking-widest text-zinc-100">Floors & Rooms</h4>
-                  <button
-                    onClick={() => setShowTargetAllocator(true)}
-                    className="flex items-center gap-1.5 rounded-xl bg-brand-500 px-3.5 py-2 text-xs font-black text-white hover:bg-brand-600 shadow-md transition-all active:scale-95"
-                  >
-                    <Target size={14} /> Allocate Daily Targets
-                  </button>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Click any task row to open detail & allocate targets</span>
                 </div>
                 {(project.floors ?? [])
                   .filter(f => openFloors.has(f.id))
@@ -1485,6 +1480,7 @@ export function SupervisorPortal({
           step={activeTaskDetailStep}
           roomName={taskDetailTarget.roomName}
           roomSqft={taskDetailTarget.roomSqft}
+          project={project}
           painters={painters}
           onClose={() => setTaskDetailTarget(null)}
           onTaskProgress={onTaskProgress}
@@ -1492,6 +1488,7 @@ export function SupervisorPortal({
           onUpdateTaskStep={onUpdateTaskStep}
           onQaApprove={onQaApprove}
           onUpdatePhoto={onUpdatePhoto}
+          onAssignDailyTarget={onAssignDailyTarget}
         />
       )}
       {kpiPainter && (
@@ -1510,6 +1507,7 @@ function TaskDetailModal({
   step,
   roomName,
   roomSqft,
+  project,
   painters,
   onClose,
   onTaskProgress,
@@ -1517,12 +1515,14 @@ function TaskDetailModal({
   onUpdateTaskStep,
   onQaApprove,
   onUpdatePhoto,
+  onAssignDailyTarget,
 }: {
   floorId: string;
   roomId: string;
   step: FinishingStep;
   roomName: string;
   roomSqft?: number;
+  project: PaintProject;
   painters: Painter[];
   onClose: () => void;
   onTaskProgress: (floorId: string, roomId: string, stepId: string, progressPct: number, status: TaskStatus) => void;
@@ -1530,10 +1530,13 @@ function TaskDetailModal({
   onUpdateTaskStep: (floorId: string, roomId: string, stepId: string, updates: Partial<FinishingStep>) => void;
   onQaApprove: (floorId: string, roomId: string, stepId: string, form: QaForm) => void;
   onUpdatePhoto: (floorId: string, roomId: string, stepId: string, photoUrl: string, type: 'before' | 'after') => void;
+  onAssignDailyTarget: (painterId: string, floorId: string, roomId: string, stepId: string, targetSqft: number, targetHours?: number) => void;
 }) {
   const [painterMenuOpen, setPainterMenuOpen] = useState(false);
   const [showQaModal, setShowQaModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState<'before' | 'after' | null>(null);
+  const [targetSqftInput, setTargetSqftInput] = useState<number>(0);
+  const [targetAllocated, setTargetAllocated] = useState(false);
 
   const assignedPainters = painters.filter(p => step.painterIds?.includes(p.id));
 
@@ -1635,6 +1638,60 @@ function TaskDetailModal({
                 </>
               )}
             </div>
+          </div>
+
+          {/* Daily Target Allocation */}
+          <div className="space-y-3 p-4 rounded-2xl border border-brand-500/20 bg-brand-500/5">
+            <div className="flex items-center gap-2">
+              <Target size={16} className="text-brand-500" />
+              <label className="text-[10px] font-black text-brand-600 uppercase tracking-widest">Daily SqFt Target Allocation</label>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500">
+              <span>Step Area: <span className="text-zinc-200">{step.stepSqft || roomSqft || 0} sqft</span></span>
+              {(() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const assigned = (project.dailyTargets ?? [])
+                  .filter(t => t.stepId === step.id && t.date === today)
+                  .reduce((sum, t) => sum + (t.targetSqft ?? 0), 0);
+                const remaining = Math.max(0, (step.stepSqft || roomSqft || 0) - assigned);
+                return <span>Remaining: <span className="text-amber-400">{remaining} sqft</span></span>;
+              })()}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="number"
+                  value={targetSqftInput === 0 ? '' : targetSqftInput}
+                  onChange={(e) => { setTargetSqftInput(parseInt(e.target.value) || 0); setTargetAllocated(false); }}
+                  min={0}
+                  placeholder="SqFt target"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-sm font-bold text-zinc-100 outline-none focus:border-brand-500"
+                />
+                <span className="absolute right-3 top-3 text-xs font-bold text-zinc-500">sqft</span>
+              </div>
+              <button
+                onClick={() => {
+                  const assignedPainters = (step.painterIds ?? []);
+                  if (assignedPainters.length === 0 || targetSqftInput <= 0) return;
+                  const estHrs = estimateHours(step.name, targetSqftInput);
+                  assignedPainters.forEach(pid => {
+                    onAssignDailyTarget(pid, floorId, roomId, step.id, targetSqftInput, estHrs || undefined);
+                  });
+                  setTargetAllocated(true);
+                }}
+                disabled={(step.painterIds ?? []).length === 0 || targetSqftInput <= 0}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-brand-500/20 hover:bg-brand-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <Target size={14} />
+                Set Target & Assign Team
+              </button>
+            </div>
+            {(step.painterIds ?? []).length === 0 && (
+              <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Assign painters above before setting a target.</p>
+            )}
+            {targetAllocated && (
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Target allocated! Painter portal agenda updated.</p>
+            )}
           </div>
 
           {/* Photos */}
