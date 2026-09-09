@@ -205,6 +205,7 @@ export function PainterPortal({
   const [showQuickPhoto, setShowQuickPhoto] = useState(false);
   const [showComplianceCheck, setShowComplianceCheck] = useState(false);
   const [, setTick] = useState(0);
+  const [switchToast, setSwitchToast] = useState<string | null>(null);
 
   const clockState: ClockState = painter.clockState ?? 'CLOCKED_OUT';
   const clockInAt = painter.clockInAt ?? null;
@@ -364,6 +365,7 @@ export function PainterPortal({
 
   const handleSelectTask = (t: typeof assignedTasks[0]) => {
     if (activeTask && activeTask.step.id !== t.step.id) {
+      if (!window.confirm('Pause current active task and switch to this task?')) return;
       onTaskSwitch(
         {
           floorId: activeTask.floorId,
@@ -373,6 +375,8 @@ export function PainterPortal({
         },
         { floorId: t.floorId, roomId: t.roomId, stepId: t.step.id }
       );
+      setSwitchToast(`Switched to ${t.step.name}`);
+      setTimeout(() => setSwitchToast(null), 3000);
     } else {
       onTaskStatusChange(t.floorId, t.roomId, t.step.id, 10, 'IN_PROGRESS');
     }
@@ -382,6 +386,11 @@ export function PainterPortal({
 
   return (
     <div className="mx-auto w-full max-w-[480px] space-y-4 animate-fade-in pb-24 min-h-screen bg-[#0F172A]">
+      {switchToast && (
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 animate-fade-in rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-500/30">
+          {switchToast}
+        </div>
+      )}
       {/* 1. Header with Live Date & Shift Status */}
       <div className="overflow-hidden rounded-3xl border border-[#1E293B] bg-[#0F172A] shadow-xl">
         <div className="bg-[#0F172A] p-5 text-white">
