@@ -1485,6 +1485,7 @@ export function SupervisorPortal({
           step={activeTaskDetailStep}
           roomName={taskDetailTarget.roomName}
           roomSqft={taskDetailTarget.roomSqft}
+          project={project}
           painters={painters}
           onClose={() => setTaskDetailTarget(null)}
           onTaskProgress={onTaskProgress}
@@ -1492,6 +1493,7 @@ export function SupervisorPortal({
           onUpdateTaskStep={onUpdateTaskStep}
           onQaApprove={onQaApprove}
           onUpdatePhoto={onUpdatePhoto}
+          onAssignDailyTarget={onAssignDailyTarget}
         />
       )}
       {kpiPainter && (
@@ -1653,7 +1655,7 @@ function TaskDetailModal({
             </div>
             {(() => {
               const today = new Date().toISOString().slice(0, 10);
-              const assigned = (project.dailyTargets ?? [])
+              const assigned = (project?.dailyTargets || [])
                 .filter(t => t.stepId === step.id && t.date === today)
                 .reduce((sum, t) => sum + (t.targetSqft ?? 0), 0);
               const stepArea = step.stepSqft || roomSqft || 0;
