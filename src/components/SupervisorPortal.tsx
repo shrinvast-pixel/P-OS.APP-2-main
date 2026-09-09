@@ -1510,6 +1510,7 @@ function TaskDetailModal({
   step,
   roomName,
   roomSqft,
+  project,
   painters,
   onClose,
   onTaskProgress,
@@ -1517,12 +1518,14 @@ function TaskDetailModal({
   onUpdateTaskStep,
   onQaApprove,
   onUpdatePhoto,
+  onAssignDailyTarget,
 }: {
   floorId: string;
   roomId: string;
   step: FinishingStep;
   roomName: string;
   roomSqft?: number;
+  project: PaintProject;
   painters: Painter[];
   onClose: () => void;
   onTaskProgress: (floorId: string, roomId: string, stepId: string, progressPct: number, status: TaskStatus) => void;
@@ -1530,10 +1533,15 @@ function TaskDetailModal({
   onUpdateTaskStep: (floorId: string, roomId: string, stepId: string, updates: Partial<FinishingStep>) => void;
   onQaApprove: (floorId: string, roomId: string, stepId: string, form: QaForm) => void;
   onUpdatePhoto: (floorId: string, roomId: string, stepId: string, photoUrl: string, type: 'before' | 'after') => void;
+  onAssignDailyTarget: (painterId: string, floorId: string, roomId: string, stepId: string, targetSqft: number, targetHours?: number) => void;
 }) {
   const [painterMenuOpen, setPainterMenuOpen] = useState(false);
   const [showQaModal, setShowQaModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState<'before' | 'after' | null>(null);
+  const [targetSqftInput, setTargetSqftInput] = useState<number>(0);
+  const [targetHours, setTargetHours] = useState<number>(0);
+  const [targetMinutes, setTargetMinutes] = useState<number>(0);
+  const [targetAllocated, setTargetAllocated] = useState(false);
 
   const assignedPainters = painters.filter(p => step.painterIds?.includes(p.id));
 
@@ -1635,6 +1643,102 @@ function TaskDetailModal({
                 </>
               )}
             </div>
+          </div>
+
+          {/* Daily Target & Duration Allocation */}
+          <div className="space-y-3 p-4 rounded-2xl border border-brand-500/20 bg-brand-500/5">
+            <div className="flex items-center gap-2">
+              <Target size={16} className="text-brand-500" />
+              <label className="text-[10px] font-black text-brand-600 uppercase tracking-widest">Daily SqFt Target & Duration Allocation</label>
+            </div>
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const assigned = (project.dailyTargets ?? [])
+                .filter(t => t.stepId === step.id && t.date === today)
+                .reduce((sum, t) => sum + (t.targetSqft ?? 0), 0);
+              const stepArea = step.stepSqft || roomSqft || 0;
+              const remaining = Math.max(0, stepArea - assigned);
+              return (
+                <p className="text-[10px] font-bold text-zinc-500">
+                  Step Area: <span className="text-zinc-200">{stepArea} sqft</span> — Remaining: <span className="text-amber-400">{remaining} sqft</span> — Already assigned: <span className="text-zinc-300">{assigned} sqft</span>
+                </p>
+              );
+            })()}
+            {/* Daily SqFt Target input */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                <Target size={12} className="mr-1 inline" />
+                Daily SqFt Target
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={targetSqftInput === 0 ? '' : targetSqftInput}
+                  onChange={(e) => { setTargetSqftInput(parseInt(e.target.value) || 0); setTargetAllocated(false); }}
+                  min={0}
+                  placeholder="Enter sqft target"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-sm font-bold text-zinc-100 outline-none focus:border-brand-500"
+                />
+                <span className="absolute right-3 top-3 text-xs font-bold text-zinc-500">sqft</span>
+              </div>
+            </div>
+            {/* Target Duration dropdowns */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                <Timer size={12} className="mr-1 inline" />
+                Target Duration
+                <span className="ml-1.5 text-[10px] font-normal text-slate-400">(system suggests {estimateHours(step.name, targetSqftInput || step.stepSqft || roomSqft || 0)}h)</span>
+              </label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <span className="mb-1 block text-[10px] font-medium text-slate-400">Hours</span>
+                  <select
+                    value={targetHours}
+                    onChange={(e) => { setTargetHours(parseInt(e.target.value) || 0); setTargetAllocated(false); }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-3 py-2.5 text-sm font-bold text-zinc-100 outline-none focus:border-brand-500"
+                  >
+                    {Array.from({ length: 13 }, (_, i) => (
+                      <option key={i} value={i}>{i} hr{i === 1 ? '' : 's'}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <span className="mb-1 block text-[10px] font-medium text-slate-400">Minutes</span>
+                  <select
+                    value={targetMinutes}
+                    onChange={(e) => { setTargetMinutes(parseInt(e.target.value) || 0); setTargetAllocated(false); }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-3 py-2.5 text-sm font-bold text-zinc-100 outline-none focus:border-brand-500"
+                  >
+                    {[0, 15, 30, 45].map((m) => (
+                      <option key={m} value={m}>{m} min</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {/* Assign button */}
+            <button
+              onClick={() => {
+                const ids = step.painterIds ?? [];
+                if (ids.length === 0 || targetSqftInput <= 0) return;
+                const totalHours = targetHours + targetMinutes / 60;
+                ids.forEach(pid => {
+                  onAssignDailyTarget(pid, floorId, roomId, step.id, targetSqftInput, totalHours > 0 ? totalHours : undefined);
+                });
+                setTargetAllocated(true);
+              }}
+              disabled={(step.painterIds ?? []).length === 0 || targetSqftInput <= 0}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-brand-500/20 hover:bg-brand-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              <Target size={14} />
+              Assign Target & Set Duration
+            </button>
+            {(step.painterIds ?? []).length === 0 && (
+              <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Assign painters above before setting a target.</p>
+            )}
+            {targetAllocated && (
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Target & duration saved! Painter portal agenda updated.</p>
+            )}
           </div>
 
           {/* Photos */}
